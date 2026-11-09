@@ -21,7 +21,9 @@ video is never used to check our output, and nothing about the match is made by 
    first). The baseline test reads the match and checks our pipeline reproduces the official
    baseline frame for frame: all tests pass, none skipped. Agents run plain `pytest`, which
    skips it.
-6. `tools/board whoami`, then post `[Your name] set up, taking <role>` on the board (issue #1).
+6. External data for `--tune`: run `tools/get_external_data.sh` once (installs git-lfs, fetches
+   SkillCorner into gitignored `external_data/`, rebuilds the seeded labels; ends with `OK`).
+7. `tools/board whoami`, then post `[Your name] set up, taking <role>` on the board (issue #1).
 
 ## Daily loop
 ```

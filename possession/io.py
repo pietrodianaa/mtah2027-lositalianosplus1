@@ -9,6 +9,7 @@ load_frames() returns a dict of numpy arrays, every per-frame array indexed by V
     player_speed  (N, 46)     m/s
     team          (46,)       0 = home (Barcelona, H), 1 = away (Athletic, A)
     half          (N,)        1 or 2 on graded frames, 0 elsewhere (pre-match, halftime, after)
+    pitch         (2,)        pitch length, width in metres
 
 A track slot is a tracklet, not a person: slots appear, vanish and swap identity.
 
@@ -81,7 +82,9 @@ def load_frames(refresh=False):
     """The frame dict described above. Cached after the first call."""
     if os.path.isfile(CACHE) and not refresh:
         with np.load(CACHE) as data:
-            return {key: data[key] for key in data.files}
+            frames = {key: data[key] for key in data.files}
+        frames["pitch"] = np.array(config.PITCH)
+        return frames
 
     meta_path, raw_path = require(["atd_meta", "atd_raw"], GAME)
     team = _team_of_each_track(meta_path)
@@ -94,6 +97,7 @@ def load_frames(refresh=False):
     }
     os.makedirs(os.path.dirname(CACHE), exist_ok=True)
     np.savez(CACHE, **frames)
+    frames["pitch"] = np.array(config.PITCH)
     return frames
 
 
