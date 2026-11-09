@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 
 SC_URL=https://github.com/SkillCorner/opendata
 SC_COMMIT=4340d274572876239c154c90bc507a9b3250a656   # pinned: same data for everyone
-export EXPECTED_DIGEST=9e0cd67b8c5e3b5d                  # labels v1; update with every LABELS_VERSION bump
+export EXPECTED_DIGEST=84812621ac1d78e6                  # labels v1; update with every LABELS_VERSION bump
 DEST=external_data/opendata
 PY=python; [ -x .venv/bin/python ] && PY=.venv/bin/python
 

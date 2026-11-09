@@ -20,7 +20,8 @@ from possession import external  # noqa: E402
 
 TOUCH_S = 1.0                  # source: football reasoning: a restart event is logged within about a second of the stoppage
 touch = int(TOUCH_S * external.SC_FPS)
-short = int(external.SHORT_GAP_S * external.SC_FPS)
+SHORT_S = 2.0                  # source: football reasoning: report split only, quick restarts vs longer stoppages
+short = int(SHORT_S * external.SC_FPS)
 agree = disagree = 0
 gaps = {"short": [0, 0], "long": [0, 0]}          # [touching a restart, total]
 for g in external.games():
@@ -48,4 +49,4 @@ print("group vs phase team: disagree {:.3f} of frames with a group ({} / {})".fo
     disagree / max(agree + disagree, 1), disagree, agree + disagree))
 for key, (hit, total) in gaps.items():
     print("{} gaps (< or >= {} s): {}/{} touch a restart = {:.3f}".format(
-        key, external.SHORT_GAP_S, hit, total, hit / max(total, 1)))
+        key, SHORT_S, hit, total, hit / max(total, 1)))

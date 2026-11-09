@@ -40,7 +40,7 @@ def test_fake_game(tmp_path, monkeypatch):
     assert tags == [] and truth.shape == (n,) and frames["players"].shape == (n, 2, 2)
     assert list(frames["team"]) == [0, 1] and list(frames["pitch"]) == [100, 60]
     at = lambda i10: truth[int(i10 * 2.5)]                            # noqa: E731
-    assert at(10) == "H" and at(32) == "H" and at(40) == "A"         # short gap = play, last team
+    assert at(10) == "H" and at(32) == "D" and at(40) == "A"         # any gap between phases = D
     assert at(70) == "D" and at(85) == "X"                            # long gap = D, untracked = X
     assert np.isclose(frames["players"][5, 0, 0], 50 + 0.2)           # 25 fps, origin at corner
     graded = truth != "X"

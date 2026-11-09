@@ -43,7 +43,6 @@ LABELS_VERSION = 1             # source: bookkeeping (0 = not set up yet; bump o
 CACHE_DIR = os.path.join(EXTERNAL_DIR, "cache_v{}".format(LABELS_VERSION))
 
 SC_FPS = 10                    # source: data format (SkillCorner README: tracking at 10 fps)
-SHORT_GAP_S = 2.0              # source: football reasoning: a real stoppage takes longer than 2 s, so shorter gaps between phases are play
 MASK_SEED = 0                  # source: bookkeeping (fixed seed: every role sees the same hidden ball)
 BALL_MISSING_SHARE = 0.41      # source: DATA.md (ball missing on ~41% of graded frames)
 BALL_MISSING_BURST_S = 1.0     # source: football reasoning: the tracker loses the ball in short bursts (same as scores.py)
@@ -116,8 +115,8 @@ def _fill(values):
 
 def truth_10fps(game):
     """H/A/D/X at 10 fps under OUR rules: in a phase of play the phase's team has the ball (loose
-    ball included); between phases the ball is out of play (D), unless the gap is shorter than
-    SHORT_GAP_S; untracked frames (replays) and frames outside the periods are X."""
+    ball included); every gap between phases is out of play (D); untracked frames (replays) and
+    frames outside the periods are X."""
     n = len(game["tracked"])
     team = np.full(n, NONE, dtype=np.int8)
     inplay = np.zeros(n, dtype=bool)
@@ -125,11 +124,6 @@ def truth_10fps(game):
         inplay[first:last + 1] = True
         team[first:last + 1] = (phase_team if phase_team is not None
                                 else _fill(game["group"][first:last + 1]))
-    short = int(SHORT_GAP_S * SC_FPS)
-    for (_, prev_last, _), (next_first, _, _) in zip(game["phases"], game["phases"][1:]):
-        if 0 < next_first - prev_last - 1 < short:
-            inplay[prev_last + 1:next_first] = True
-            team[prev_last + 1:next_first] = team[prev_last]          # loose ball: last team
     truth = np.full(n, "D", dtype="<U1")
     truth[inplay & (team == HOME)] = "H"
     truth[inplay & (team == AWAY)] = "A"
