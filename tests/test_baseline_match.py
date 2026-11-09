@@ -25,6 +25,7 @@ import possession_metrics  # noqa: E402  official reader
 def test_reproduces_baseline_smooth50(monkeypatch):
     from possession import pipeline
     monkeypatch.setattr(dead_ball, "ENABLED", False)
+    monkeypatch.setattr(postprocess, "METHOD", "baseline")
     monkeypatch.setattr(postprocess, "SMOOTH_WINDOW", 50)
     ours = pipeline.run(verbose=False)
     reference = np.asarray(possession_metrics.read_label_csv(REFERENCE)["label"])

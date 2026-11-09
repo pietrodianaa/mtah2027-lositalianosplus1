@@ -82,8 +82,8 @@ integration files need his approval (CODEOWNERS enforces it).
 - **External labels are versioned.** `external.LABELS_VERSION` changes only with a post on the
   board; scores from different versions are never compared. Same for `scores.REFERENCE_VERSION`
   (changing `scores.py` needs the whole team's agreement).
-- **Joint check at milestones only.** The lead runs `--role full` on Nov 9 (v1) and during
-  Nov 10–14 to see how the parts combine. Nobody tunes against the full score in between.
+- **Joint check at milestones only.** The lead runs `--role full` on Nov 12 (v1) and during
+  Nov 13–14 to see how the parts combine. Nobody tunes against the full score in between.
 
 ## 5. Who owns what
 
