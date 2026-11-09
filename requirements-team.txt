@@ -1,0 +1,5 @@
+# Pinned so `python run.py --final` regenerates the same file on every machine. Python 3.11.
+numpy==2.1.3
+pandas==2.2.3
+pytest==8.3.4
+# Optional extras for the official starter notebooks: pip install -r requirements-starter.txt
