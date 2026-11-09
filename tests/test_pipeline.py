@@ -63,14 +63,15 @@ def test_feature_contract_is_add_only():
 
 
 def test_every_number_has_a_source():
-    for name in ("config", "features", "dead_ball", "control", "postprocess", "scores"):
+    for name in ("config", "features", "dead_ball", "control", "postprocess", "scores", "external"):
         path = os.path.join(ROOT, "possession", name + ".py")
         lines = open(path).read().splitlines()
         for node in ast.parse("\n".join(lines)).body:
             if isinstance(node, ast.Assign) and all(
                     isinstance(t, ast.Name) and t.id.isupper() for t in node.targets):
                 line = lines[node.lineno - 1]
-                if node.targets[0].id in ("TEAM_NAME", "ROOT", "HOME", "AWAY", "NONE", "NOBODY"):
+                if node.targets[0].id in ("TEAM_NAME", "ROOT", "HOME", "AWAY", "NONE", "NOBODY",
+                                         "EXTERNAL_DIR", "MATCHES_DIR", "CACHE_DIR", "ROLES"):
                     continue
                 assert "# source:" in line or (
                     node.lineno >= 2 and "source:" in lines[node.lineno - 2]), \
