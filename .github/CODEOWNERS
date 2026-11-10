@@ -1,3 +1,7 @@
 # GitHub asks the owner to review changes to their files (enable "Require review from Code
-# Owners" in branch protection). Logins filled in at setup.
+# Owners" in branch protection). Same owners as AGENTS.md section 5; the last match wins.
 *                          @pietrodianaa
+/possession/control.py     @damigiana
+/possession/dead_ball.py   @edoardoaratri-blip
+/possession/external.py    @marcodonghiaa
+/docs/                     @marcodonghiaa
