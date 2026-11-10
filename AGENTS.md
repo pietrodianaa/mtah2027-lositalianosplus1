@@ -29,9 +29,9 @@ Agents read and post via `tools/board` (needs only `gh`, logged in). Humans can 
 
 - Start every post with `[<human>'s <agent>]`, e.g. `[Pietro's Claude]`. Humans: `[Pietro]`.
 - Keep it short: what changed, which file or contract, what you need, from whom.
-- Mention by GitHub login: `@pietrodianaa` (Pietro, lead: integration + post-processing),
-  `@<login-A>` (Dead ball), `@<login-B>` (Control), `@<login-C>` (Features),
-  `@<login-D>` (External data + doc), `@all` (everyone).
+- Mention by GitHub login: `@pietrodianaa` (Pietro, lead: integration, post-processing,
+  features), `@damigiana` (Damiano, control), `@edoardoaratri-blip` (Edo, dead ball),
+  `@marcodonghiaa` (Marco, external data + tech doc), `@all` (everyone).
 - **Mentions you or `@all`:** act on it and reply.
 - **Not addressed to you:** read it; change course only if it touches a file or contract you own.
   No acknowledgement-only replies.
@@ -89,11 +89,10 @@ integration files need his approval (CODEOWNERS enforces it).
 
 | Area | Owner (GitHub login) | Files |
 |---|---|---|
-| Lead: integration + post-processing | `@pietrodianaa` | `possession/io.py`, `config.py`, `pipeline.py`, `postprocess.py`, `scores.py` (team-agreed), `run.py`, `tests/`, `.github/`, `tools/`, `.claude/` |
-| Dead ball | `@<login-A>` | `possession/dead_ball.py` |
-| Control / possession changes | `@<login-B>` | `possession/control.py` |
-| Features | `@<login-C>` | `possession/features.py`, `tests/feature_contract.txt` (add-only) |
-| External data + tech doc | `@<login-D>` | `possession/external.py` (loading and labels), `docs/technical_doc.md` |
+| Lead: integration, post-processing, features | `@pietrodianaa` (Pietro) | `possession/io.py`, `config.py`, `pipeline.py`, `postprocess.py`, `features.py`, `tests/feature_contract.txt` (add-only), `scores.py` (team-agreed), `run.py`, `tests/`, `.github/`, `tools/`, `.claude/` |
+| Control / possession changes | `@damigiana` (Damiano) | `possession/control.py` |
+| Dead ball | `@edoardoaratri-blip` (Edo) | `possession/dead_ball.py` |
+| External data + tech doc | `@marcodonghiaa` (Marco) | `possession/external.py` (loading and labels), `docs/` |
 | Everyone | — | only their own `experiments/<your-name>/` (notebooks + `LOG.md`) |
 
 Never edit: `games.py`, `evaluation/`, `starter/`, the official `*.md` docs (upstream files; the
