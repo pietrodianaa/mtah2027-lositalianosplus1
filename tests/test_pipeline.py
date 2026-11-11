@@ -99,3 +99,34 @@ def test_dead_ball_score():
     truth = synthetic_truth()
     perfect = scores.dead_ball(truth == "D", truth)
     assert perfect["dead_F1"] == 1.0
+
+
+def test_ball_v2_fills_only_short_gaps():
+    n = 60
+    ball = np.column_stack((np.arange(n, dtype=float) * 0.4, np.full(n, 30.0)))
+    ball[10:15] = np.nan                          # short gap: filled on the straight line
+    ball[20:50] = np.nan                          # longer than max_frames: left as NaN
+    ball[57:] = np.nan                            # no seen position after it: left as NaN
+    half = np.ones(n, dtype=np.int8)
+    out, filled = features.fill_ball_gaps(ball, half, max_frames=25, max_step_m=1.4)
+    assert filled[10:15].all() and filled.sum() == 5
+    assert np.allclose(out[10:15, 0], np.arange(10, 15) * 0.4)
+    assert np.isnan(out[20:50, 0]).all() and np.isnan(out[57:, 0]).all()
+    seen = ~np.isnan(ball[:, 0])
+    assert np.array_equal(out[seen], ball[seen])
+
+    half[13:] = 2                                 # the gap spans half time: not filled
+    assert not features.fill_ball_gaps(ball, half, 25, 1.4)[1].any()
+    jump = ball.copy()
+    jump[15:20, 0] += 40.0                        # 40 m in 6 frames: tracker jump, not filled
+    assert not features.fill_ball_gaps(jump, None, 25, 1.4)[1][10:15].any()
+
+
+def test_ball_v2_leaves_v1_features_unchanged():
+    frames = synthetic_frames()
+    feats = features.compute(frames)
+    assert np.array_equal(np.isnan(frames["ball"][:, 0]), ~feats["ball_visible"])
+    assert feats["ball_v2"].shape == (N, 2)
+    seen = feats["ball_visible"]
+    assert np.array_equal(feats["ball_v2"][seen], frames["ball"][seen])
+    assert not feats["ball_v2_filled"][seen].any()
