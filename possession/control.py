@@ -2,25 +2,74 @@
 
 detect(frames, feats, tags) -> (N,) int8 evidence: 0 = H, 1 = A, -1 = no evidence.
 
-This is RAW evidence, allowed to be noisy: postprocess turns it into stable possessions. v0 is the
-baseline rule: whoever is nearest to the visible ball, no evidence when the ball is not visible.
+This is RAW evidence, allowed to be noisy: postprocess turns it into stable possessions.
 
 The real problem (CHALLENGE.md): possession only changes when the other team has the ball UNDER
 CONTROL. These are NOT changes: a single touch, a deflected pass, an aerial duel won without
-control. A loose ball stays with the team that last had it. Ideas:
-  - require the new team to be nearest for K consecutive frames, or within R metres
-  - ball slowing down / changing direction near a player = reception or touch
-  - ball moving fast between players = pass in flight, keep the previous owner
-  - compare home vs away nearest distance (feats nearest_dist_H / nearest_dist_A)
-  - output -1 when unsure: it is cheaper than a wrong guess (see postprocess)
+control. A loose ball stays with the team that last had it.
+
+v1 (issue #9), three steps:
+  1. Contact: the ball is visible, the nearest player is within CONTROL_RADIUS_M of it and is
+     clearly closer than the nearest opponent (by CLEAR_MARGIN_M). Otherwise no contact.
+  2. Control: a contact counts only if the same team keeps it for CONFIRM_S without a break.
+     A touch, deflection or duel is shorter, so it gives no evidence for the new team.
+  3. Loose ball: after the last confirmed control, the evidence stays with that team for up to
+     HOLD_S (pass in flight, bounce, ball briefly lost by the tracker). After that: -1.
 """
 
+import numpy as np
+
+from . import config
 from .features import NOBODY
 
 # --- parameters (owner: control). Every number carries a source; durations in seconds. ---------
+METHOD = "v1"            # source: issue #9 ("baseline" = v0 nearest team, kept so tests/test_baseline_match.py can prove frame alignment with the official baseline)
+CONTROL_RADIUS_M = 2.5   # source: football reasoning: a player controlling the ball has it within one stride (~2 m) plus ~0.5 m tracking error; external v1: flat between 2.5 and 3 m
+CLEAR_MARGIN_M = 0.5     # source: football reasoning: the controller must be clearly nearer than the nearest opponent, half a metre is above tracking noise (a duel is closer than that); external v1: flat between 0.25 and 1 m
+CONFIRM_S = 0.5          # source: football reasoning: a touch or deflection keeps the ball near a player for a few frames, a reception plus first touch takes about half a second; external v1: flat between 0.4 and 0.6 s
+HOLD_S = 5.0             # source: football reasoning: a pass in flight or a loose ball rarely lasts more than a few seconds before someone controls it; external v1: flat between 5 and 8 s
 
 
-def detect(frames, feats, tags):
+def _contact(feats):
+    """Step 1: team in clear, close contact with the visible ball, NOBODY otherwise."""
+    d_home, d_away = feats["nearest_dist_H"], feats["nearest_dist_A"]
+    nearest = np.fmin(d_home, d_away)
+    gap = np.abs(d_home - d_away)            # NaN if a team is missing: no clear winner then
+    close = (nearest < CONTROL_RADIUS_M) & (gap > CLEAR_MARGIN_M) & feats["ball_visible"]
+    team = np.where(d_home < d_away, 0, 1)     # 0 = H, 1 = A (players only, never a referee)
+    return np.where(close, team, NOBODY).astype(np.int8)
+
+
+def _confirmed(contact, min_frames):
+    """Step 2: keep only runs of the same team at least min_frames long."""
+    n = len(contact)
+    if n == 0:
+        return contact.copy()
+    starts = np.flatnonzero(np.r_[True, contact[1:] != contact[:-1]])
+    lengths = np.diff(np.r_[starts, n])
+    keep = (contact[starts] != NOBODY) & (lengths >= min_frames)
+    return np.where(np.repeat(keep, lengths), contact, NOBODY).astype(np.int8)
+
+
+def _hold(evidence, max_frames):
+    """Step 3: carry the last confirmed team forward for at most max_frames."""
+    idx = np.arange(len(evidence))
+    last = np.maximum.accumulate(np.where(evidence != NOBODY, idx, -1))
+    held = np.where(last >= 0, evidence[np.maximum(last, 0)], NOBODY).astype(np.int8)
+    held[(last < 0) | (idx - last > max_frames)] = NOBODY
+    return held
+
+
+def _baseline(feats):
+    """v0, the official baseline rule: nearest team to the visible ball."""
     evidence = feats["nearest_team"].copy()
     evidence[~feats["ball_visible"]] = NOBODY
     return evidence
+
+
+def detect(frames, feats, tags):
+    if METHOD == "baseline":
+        return _baseline(feats)
+    confirm = max(int(round(CONFIRM_S * config.FPS)), 1)
+    hold = int(round(HOLD_S * config.FPS))
+    return _hold(_confirmed(_contact(feats), confirm), hold)
