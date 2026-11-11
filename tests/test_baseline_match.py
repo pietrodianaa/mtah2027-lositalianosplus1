@@ -11,7 +11,7 @@ import sys
 import numpy as np
 import pytest
 
-from possession import dead_ball, postprocess
+from possession import control, dead_ball, postprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REFERENCE = os.path.join(ROOT, "evaluation", "results", "baseline_smooth50.csv")
@@ -24,6 +24,7 @@ import possession_metrics  # noqa: E402  official reader
                     reason="reads the match: humans only, run with MTAH_HUMAN=1")
 def test_reproduces_baseline_smooth50(monkeypatch):
     from possession import pipeline
+    monkeypatch.setattr(control, "METHOD", "baseline")
     monkeypatch.setattr(dead_ball, "ENABLED", False)
     monkeypatch.setattr(postprocess, "METHOD", "baseline")
     monkeypatch.setattr(postprocess, "SMOOTH_WINDOW", 50)
