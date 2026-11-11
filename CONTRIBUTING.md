@@ -24,6 +24,7 @@ video is never used to check our output, and nothing about the match is made by 
 6. External data for `--tune`: run `tools/get_external_data.sh` once (installs git-lfs, fetches
    SkillCorner into gitignored `external_data/`, rebuilds the seeded labels; ends with `OK`).
 7. `tools/board whoami`, then post `[Your name] set up, taking <role>` on the board (issue #1).
+8. On first launch, approve the edge MCP server (skill search).
 
 ## Daily loop
 ```
