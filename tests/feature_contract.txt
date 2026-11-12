@@ -6,3 +6,7 @@ nearest_dist
 nearest_dist_H
 nearest_dist_A
 n_players
+ball_v2
+ball_v2_filled
+nearest_dist_H_v2
+nearest_dist_A_v2
