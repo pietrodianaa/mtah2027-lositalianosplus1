@@ -2,7 +2,7 @@
 
 detect(frames, feats, tags) -> (N,) bool, True = dead ball (label D).
 
-v1 (#10, tuned in v1.1): ball out over a touchline or byline.
+v2 (#10): ball out over a touchline or byline, dead until the restart.
   1. A stretch where the visible ball is beyond a line is dead if, somewhere in it, the ball is
      clearly out (more than MARGIN_M past the line). The whole stretch counts, so the dead run
      starts when the ball crosses the line, not when it passes the margin.
@@ -32,10 +32,10 @@ ENABLED = True                 # source: football reasoning: v1 out-of-bounds ru
 MARGIN_M = 0.25                # source: external v1: sweep flat from 0 to 0.25 m (F1 0.503-0.486, P 0.926), 1 m 0.414; football reasoning: whole ball past the line = centre >= 0.11 m past it, 0.25 m keeps a buffer for tracking noise
 MAX_FILL_S = 40.0              # source: external v1: sweep 0 s F1 0.09, 10 s 0.46, flat from 20 to 90 s; football reasoning: throw-in ~15 s, goal kick ~29 s, corner ~34 s (Opta)
 MIN_DEAD_S = 2.0               # source: football reasoning: a real stoppage lasts seconds, shorter runs are glitches; external v1: 1-3 s within 0.01
-HOLD_UNTIL_RESTART = True      # source: football reasoning: after an out play stays dead until the restart, even when the ball is seen again inside the pitch (ball boy, ball placed)
+HOLD_UNTIL_RESTART = True      # source: football reasoning: after an out play stays dead until the restart, even with the ball seen again inside (ball boy, ball placed); external v1: F1 0.486 -> 0.545
 SPEED_WINDOW_S = 0.2           # source: football reasoning: a thrown or kicked ball covers > 1 m in 0.2 s, well above ~0.5 m tracking error
-RESTART_SPEED_MS = 6.0         # source: football reasoning: throw-ins and kicks start faster than a ball carried or placed by hand
-RESTART_ZONE_M = 10.0          # source: football reasoning: every restart after an out is near a line (touchline, corner arc, goal area 5.5 m); seen farther inside = play has restarted
+RESTART_SPEED_MS = 4.0         # source: external v1: sweep 4/6/9 m/s, F1 flat (0.545-0.558), precision 0.916/0.899/0.873, so 4 (fewest false D); football reasoning: throws and kicks start faster than a ball carried or placed
+RESTART_ZONE_M = 6.0           # source: football reasoning: every restart after an out is near a line (touchline, corner arc, goal area 5.5 m deep); external v1: 6/10/20 m flat, 6 m best precision
 
 
 def detect(frames, feats, tags):
