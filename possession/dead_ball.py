@@ -11,12 +11,14 @@ v1.2 (#10): ball out over a touchline or byline, dead until the restart.
      restart: the ball moving fast again (throw-in, kick) or seen more than RESTART_ZONE_M inside
      every line; a ball seen again near a line but still (placed for the restart) stays dead.
      Without it (v1.1) the run ends as soon as the ball is seen again.
-  3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped.
+Rule 2 (#10): ball still after a whistle (fouls, offsides). The ball barely moves for
+STILL_WINDOW_S, nobody is within STILL_CLEAR_M of it (the taker steps away for the run-up; this
+excludes a keeper holding the ball or a player with it at his feet) and players walk on average:
+dead if that lasts at least STILL_MIN_S. Ends when the ball moves or a player reaches it.
+  3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped (both rules).
 Works with tags == [] (tags are not used yet).
 
 Signals still to try (each from football reasoning; check with `python run.py --tune --role dead_ball`):
-  - ball still (speed ~0) for a while, often with players also slowing down; never the keeper
-    holding the ball (ball stays with him), but yes a free kick in the box (taker steps away)
   - Smart Tagging 'SET PIECES' intervals: every set piece is a restart, so a dead stretch ends
     near its start. Type tag: Throw-in, Corner Kick, Goal Kick, Free Kick, Kick Off.
   - players regrouping (kick-off shape after goals, wall at free kicks)
@@ -36,6 +38,13 @@ HOLD_UNTIL_RESTART = True      # source: football reasoning: after an out play s
 SPEED_WINDOW_S = 0.2           # source: football reasoning: a thrown or kicked ball covers > 1 m in 0.2 s, well above ~0.5 m tracking error
 RESTART_SPEED_MS = 4.0         # source: external v1: sweep 4/6/9 m/s, F1 flat (0.545-0.558), precision 0.916/0.899/0.873, so 4 (fewest false D); football reasoning: throws and kicks start faster than a ball carried or placed
 RESTART_ZONE_M = 6.0           # source: football reasoning: every restart after an out is near a line (touchline, corner arc, goal area 5.5 m deep); external v1: 6/10/20 m flat, 6 m best precision
+# rule 2, ball still (fouls, offsides): ball placed, nobody on it, players walking
+STILL_ENABLED = True           # source: football reasoning: after a whistle the ball is placed for the free kick and play waits
+STILL_WINDOW_S = 1.0           # source: football reasoning: 1 s is long enough to tell a placed ball from tracking jitter (~0.5 m)
+STILL_SPEED_MS = 1.0           # source: football reasoning: a placed ball moves < 1 m in 1 s; a ball in play moves faster or is carried
+STILL_CLEAR_M = 1.5            # source: football reasoning: the taker steps away for the run-up; a keeper holding the ball or a player with it at his feet is within ~1 m
+STILL_PLAYERS_MS = 2.5         # source: football reasoning: players walk (< ~2.5 m/s on average) while a free kick is set up
+STILL_MIN_S = 3.0              # source: football reasoning: setting up even a quick free kick takes a few seconds
 
 
 def detect(frames, feats, tags):
@@ -83,6 +92,30 @@ def detect(frames, feats, tags):
                 dead[k] = True
                 k += 1
         i = j
+
+    # rule 2: ball still with nobody on it and players walking, for at least STILL_MIN_S
+    if STILL_ENABLED:
+        ws = int(STILL_WINDOW_S * config.FPS)
+        drift = np.full(n, np.nan)
+        drift[ws:] = np.linalg.norm(frames["ball"][ws:] - frames["ball"][:-ws], axis=1) / STILL_WINDOW_S
+        nearest = feats["nearest_dist"]
+        player_speed = frames["player_speed"]
+        tracked = ~np.isnan(player_speed)
+        mean_speed = np.where(tracked, player_speed, 0.0).sum(axis=1) / np.maximum(tracked.sum(axis=1), 1)
+        with np.errstate(invalid="ignore"):
+            still = (drift < STILL_SPEED_MS) & (nearest > STILL_CLEAR_M) & (mean_speed < STILL_PLAYERS_MS)
+        min_still = int(STILL_MIN_S * config.FPS)
+        i = 0
+        while i < n:
+            if not still[i]:
+                i += 1
+                continue
+            j = i
+            while j < n and still[j]:
+                j += 1
+            if j - i >= min_still:
+                dead[i:j] = True
+            i = j
 
     # 3: drop dead runs too short to be a stoppage
     i = 0
