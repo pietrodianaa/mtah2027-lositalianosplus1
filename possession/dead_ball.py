@@ -2,7 +2,7 @@
 
 detect(frames, feats, tags) -> (N,) bool, True = dead ball (label D).
 
-v1 (#10): ball out over a touchline or byline.
+v1 (#10, tuned in v1.1): ball out over a touchline or byline.
   1. A stretch where the visible ball is beyond a line is dead if, somewhere in it, the ball is
      clearly out (more than MARGIN_M past the line). The whole stretch counts, so the dead run
      starts when the ball crosses the line, not when it passes the margin.
@@ -27,9 +27,9 @@ from . import config
 
 # --- parameters (owner: dead ball). Every number carries a source; durations in seconds. -------
 ENABLED = True                 # source: football reasoning: v1 out-of-bounds rule (#10)
-MARGIN_M = 1.0                 # source: football reasoning: out only when the whole ball is past the line; tracking error ~0.5 m, so 1 m past it is clearly out
-MAX_FILL_S = 40.0              # source: football reasoning: ball usually lost until the restart; throw-in ~15 s, goal kick ~29 s, corner ~34 s (Opta, Premier League 2023-25)
-MIN_DEAD_S = 2.0               # source: football reasoning: a real stoppage lasts seconds, even a quick throw-in; shorter runs are tracking glitches
+MARGIN_M = 0.25                # source: external v1: sweep flat from 0 to 0.25 m (F1 0.503-0.486, P 0.926), 1 m 0.414; football reasoning: whole ball past the line = centre >= 0.11 m past it, 0.25 m keeps a buffer for tracking noise
+MAX_FILL_S = 40.0              # source: external v1: sweep 0 s F1 0.09, 10 s 0.46, flat from 20 to 90 s; football reasoning: throw-in ~15 s, goal kick ~29 s, corner ~34 s (Opta)
+MIN_DEAD_S = 2.0               # source: football reasoning: a real stoppage lasts seconds, shorter runs are glitches; external v1: 1-3 s within 0.01
 
 
 def detect(frames, feats, tags):

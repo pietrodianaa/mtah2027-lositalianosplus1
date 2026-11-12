@@ -39,5 +39,5 @@ for margin in MARGINS_M:
             recall = np.mean([r["dead_recall"] for r in rows])
             f1 = np.mean([r["dead_F1"] for r in rows])
             mark = "  <- v1" if (margin, max_fill, min_dead) == (1.0, 40.0, 2.0) else ""
-            print("{:8.1f}  {:10.0f}  {:10.0f}   {:9.4f}  {:6.4f}  {:7.4f}{}".format(
+            print("{:8.2f}  {:10.0f}  {:10.0f}   {:9.4f}  {:6.4f}  {:7.4f}{}".format(
                 margin, max_fill, min_dead, precision, recall, f1, mark), flush=True)
