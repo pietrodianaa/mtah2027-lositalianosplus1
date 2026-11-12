@@ -2,30 +2,81 @@
 
 detect(frames, feats, tags) -> (N,) bool, True = dead ball (label D).
 
-v0 returns all False: the baseline has no dead-ball notion beyond "the tracker lost the ball",
-which postprocess handles. That is why its D class is weak, and why this module is an opening.
+v1 (#10): ball out over a touchline or byline.
+  1. A stretch where the visible ball is beyond a line is dead if, somewhere in it, the ball is
+     clearly out (more than MARGIN_M past the line). The whole stretch counts, so the dead run
+     starts when the ball crosses the line, not when it passes the margin.
+  2. After it goes out the tracker usually loses the ball (stands, ball boy, off camera): stay
+     dead while the ball is missing, up to MAX_FILL_S, never across halves. The run ends as soon
+     as the ball is seen again inside the pitch.
+  3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped.
+Works with tags == [] (tags are not used yet).
 
-Signals worth trying (each from football reasoning; check with `python run.py --tune --role dead_ball`):
-  - ball outside the pitch lines (x < 0, x > 105.3, y < 0, y > 68), with a margin
-  - ball still (speed ~0) for a while, often with players also slowing down
+Signals still to try (each from football reasoning; check with `python run.py --tune --role dead_ball`):
+  - ball still (speed ~0) for a while, often with players also slowing down; never the keeper
+    holding the ball (ball stays with him), but yes a free kick in the box (taker steps away)
   - Smart Tagging 'SET PIECES' intervals: every set piece is a restart, so a dead stretch ends
     near its start. Type tag: Throw-in, Corner Kick, Goal Kick, Free Kick, Kick Off.
   - players regrouping (kick-off shape after goals, wall at free kicks)
-  - the ball disappearing near a touchline / byline
 Remember: the ground truth says D only while the ball is dead. Restart ownership is NOT asked for.
 """
 
 import numpy as np
 
-from . import config  # noqa: F401  (general facts only: FPS, PITCH)
+from . import config
 
 # --- parameters (owner: dead ball). Every number carries a source; durations in seconds. -------
-ENABLED = False                # source: official baseline default (no dead-ball detection)
+ENABLED = True                 # source: football reasoning: v1 out-of-bounds rule (#10)
+MARGIN_M = 1.0                 # source: football reasoning: out only when the whole ball is past the line; tracking error ~0.5 m, so 1 m past it is clearly out
+MAX_FILL_S = 40.0              # source: football reasoning: ball usually lost until the restart; throw-in ~15 s, goal kick ~29 s, corner ~34 s (Opta, Premier League 2023-25)
+MIN_DEAD_S = 2.0               # source: football reasoning: a real stoppage lasts seconds, even a quick throw-in; shorter runs are tracking glitches
 
 
 def detect(frames, feats, tags):
-    dead = np.zeros(len(frames["ball"]), dtype=bool)
+    n = len(frames["ball"])
+    dead = np.zeros(n, dtype=bool)
     if not ENABLED:
         return dead
-    # implement here.
+
+    length, width = frames.get("pitch", config.PITCH)       # synthetic test frames have no pitch
+    x = frames["ball"][:, 0]
+    y = frames["ball"][:, 1]
+    half = frames["half"]
+    visible = ~np.isnan(x)
+    with np.errstate(invalid="ignore"):
+        past_line = visible & ((x < 0) | (x > length) | (y < 0) | (y > width))
+        past_margin = visible & ((x < -MARGIN_M) | (x > length + MARGIN_M)
+                                 | (y < -MARGIN_M) | (y > width + MARGIN_M))
+    max_fill = int(MAX_FILL_S * config.FPS)
+    min_dead = int(MIN_DEAD_S * config.FPS)
+
+    # 1 + 2: stretches past a line that are clearly out (or continue a dead run), then the gap after
+    i = 0
+    while i < n:
+        if not past_line[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and past_line[j]:
+            j += 1
+        if past_margin[i:j].any() or (i > 0 and dead[i - 1]):
+            dead[i:j] = True
+            k = j
+            while k < n and k - j < max_fill and not visible[k] and half[k] == half[j - 1]:
+                dead[k] = True
+                k += 1
+        i = j
+
+    # 3: drop dead runs too short to be a stoppage
+    i = 0
+    while i < n:
+        if not dead[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and dead[j]:
+            j += 1
+        if j - i < min_dead:
+            dead[i:j] = False
+        i = j
     return dead
