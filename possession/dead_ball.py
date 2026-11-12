@@ -39,12 +39,12 @@ SPEED_WINDOW_S = 0.2           # source: football reasoning: a thrown or kicked 
 RESTART_SPEED_MS = 4.0         # source: external v1: sweep 4/6/9 m/s, F1 flat (0.545-0.558), precision 0.916/0.899/0.873, so 4 (fewest false D); football reasoning: throws and kicks start faster than a ball carried or placed
 RESTART_ZONE_M = 6.0           # source: football reasoning: every restart after an out is near a line (touchline, corner arc, goal area 5.5 m deep); external v1: 6/10/20 m flat, 6 m best precision
 # rule 2, ball still (fouls, offsides): ball placed, nobody on it, players walking
-STILL_ENABLED = True           # source: football reasoning: after a whistle the ball is placed for the free kick and play waits
+STILL_ENABLED = True           # source: football reasoning: after a whistle the ball is placed and play waits; external v1: F1 0.545 -> 0.557, precision up, isolated D runs unchanged (26)
 STILL_WINDOW_S = 1.0           # source: football reasoning: 1 s is long enough to tell a placed ball from tracking jitter (~0.5 m)
-STILL_SPEED_MS = 1.0           # source: football reasoning: a placed ball moves < 1 m in 1 s; a ball in play moves faster or is carried
-STILL_CLEAR_M = 1.5            # source: football reasoning: the taker steps away for the run-up; a keeper holding the ball or a player with it at his feet is within ~1 m
-STILL_PLAYERS_MS = 2.5         # source: football reasoning: players walk (< ~2.5 m/s on average) while a free kick is set up
-STILL_MIN_S = 3.0              # source: football reasoning: setting up even a quick free kick takes a few seconds
+STILL_SPEED_MS = 1.0           # source: football reasoning: a placed ball moves < 1 m in 1 s; external v1: 0.5 vs 1.0 within 0.004
+STILL_CLEAR_M = 1.5            # source: football reasoning: taker steps away; keeper holding the ball within ~1 m (2024-25: keepers held it long); external v1: 1.0/1.5/3.0 m F1 0.559/0.557/0.551, 1.5 for keeper safety
+STILL_PLAYERS_MS = 2.5         # source: football reasoning: players walk while a free kick is set up; external v1: no effect (2.0 to off identical), kept as a safeguard
+STILL_MIN_S = 3.0              # source: football reasoning: setting up even a quick free kick takes a few seconds; external v1: 3 vs 5 s within 0.01
 
 
 def detect(frames, feats, tags):
