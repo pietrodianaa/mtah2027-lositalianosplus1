@@ -13,9 +13,9 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from possession import dead_ball, external, scores  # noqa: E402
 
-MARGINS_M = [0.5, 1.0, 1.5]           # source: football reasoning: around the 1 m of v1 (tracking error ~0.5 m)
-MAX_FILLS_S = [20.0, 40.0, 60.0, 90.0]  # source: football reasoning: throw-in ~15 s up to goal/kick-off ~70 s
-MIN_DEADS_S = [1.0, 2.0, 3.0]         # source: football reasoning: around the 2 s of v1
+MARGINS_M = [0.0, 0.1, 0.25, 0.5, 1.0]  # source: external v1: run 1 rose as the margin fell (1.5 -> 0.5 m), so look lower
+MAX_FILLS_S = [0.0, 5.0, 10.0, 20.0, 40.0]  # source: external v1: run 1 flat from 20 to 90 s; 0 = no fill, does filling help at all?
+MIN_DEADS_S = [1.0, 2.0]              # source: external v1: run 1 moved < 0.01 between 1 and 3 s
 
 if not external.games():
     sys.exit("No external games: run tools/get_external_data.sh first.")
