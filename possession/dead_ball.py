@@ -14,7 +14,8 @@ v1.2 (#10): ball out over a touchline or byline, dead until the restart.
 Rule 2 (#10): ball still after a whistle (fouls, offsides). The ball barely moves for
 STILL_WINDOW_S, nobody is within STILL_CLEAR_M of it (the taker steps away for the run-up; this
 excludes a keeper holding the ball or a player with it at his feet) and players walk on average:
-dead if that lasts at least STILL_MIN_S. Ends when the ball moves or a player reaches it.
+dead if that lasts at least STILL_MIN_S (backdated by the window). Short tracker gaps where the
+ball reappears on the same spot are bridged. Ends when the ball moves or a player reaches it.
   3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped (both rules).
 Works with tags == [] (tags are not used yet).
 
@@ -45,6 +46,9 @@ STILL_SPEED_MS = 1.0           # source: football reasoning: a placed ball moves
 STILL_CLEAR_M = 1.5            # source: football reasoning: taker steps away; keeper holding the ball within ~1 m (2024-25: keepers held it long); external v1: 1.0/1.5/3.0 m F1 0.559/0.557/0.551, 1.5 for keeper safety
 STILL_PLAYERS_MS = 2.5         # source: football reasoning: players walk while a free kick is set up; external v1: no effect (2.0 to off identical), kept as a safeguard
 STILL_MIN_S = 3.0              # source: football reasoning: setting up even a quick free kick takes a few seconds; external v1: 3 vs 5 s within 0.01
+STILL_BRIDGE_S = 1.0           # source: football reasoning: a ball unseen for a moment that reappears on the same spot has not moved (tracker loses it ~41% of frames)
+STILL_BRIDGE_M = 1.0           # source: football reasoning: same spot = within 1 m, about twice the tracking error
+STILL_BACKDATE = True          # source: football reasoning: a ball still now vs STILL_WINDOW_S ago was already still during that window
 
 
 def detect(frames, feats, tags):
@@ -96,14 +100,32 @@ def detect(frames, feats, tags):
     # rule 2: ball still with nobody on it and players walking, for at least STILL_MIN_S
     if STILL_ENABLED:
         ws = int(STILL_WINDOW_S * config.FPS)
+        with np.errstate(invalid="ignore"):
+            clear = feats["nearest_dist"] > STILL_CLEAR_M
+        # bridge short gaps: ball unseen for <= STILL_BRIDGE_S, back within STILL_BRIDGE_M of where
+        # it vanished = it did not move; hold its position and keep the nearest-player check as before
+        ball = frames["ball"].copy()
+        max_gap = int(STILL_BRIDGE_S * config.FPS)
+        i = 1
+        while i < n:
+            if visible[i]:
+                i += 1
+                continue
+            j = i
+            while j < n and not visible[j]:
+                j += 1
+            if j < n and visible[i - 1] and j - i <= max_gap \
+                    and np.linalg.norm(ball[j] - ball[i - 1]) < STILL_BRIDGE_M:
+                ball[i:j] = ball[i - 1]
+                clear[i:j] = clear[i - 1]
+            i = j
         drift = np.full(n, np.nan)
-        drift[ws:] = np.linalg.norm(frames["ball"][ws:] - frames["ball"][:-ws], axis=1) / STILL_WINDOW_S
-        nearest = feats["nearest_dist"]
+        drift[ws:] = np.linalg.norm(ball[ws:] - ball[:-ws], axis=1) / STILL_WINDOW_S
         player_speed = frames["player_speed"]
         tracked = ~np.isnan(player_speed)
         mean_speed = np.where(tracked, player_speed, 0.0).sum(axis=1) / np.maximum(tracked.sum(axis=1), 1)
         with np.errstate(invalid="ignore"):
-            still = (drift < STILL_SPEED_MS) & (nearest > STILL_CLEAR_M) & (mean_speed < STILL_PLAYERS_MS)
+            still = (drift < STILL_SPEED_MS) & clear & (mean_speed < STILL_PLAYERS_MS)
         min_still = int(STILL_MIN_S * config.FPS)
         i = 0
         while i < n:
@@ -114,7 +136,7 @@ def detect(frames, feats, tags):
             while j < n and still[j]:
                 j += 1
             if j - i >= min_still:
-                dead[i:j] = True
+                dead[max(i - ws, 0) if STILL_BACKDATE else i:j] = True
             i = j
 
     # 3: drop dead runs too short to be a stoppage
