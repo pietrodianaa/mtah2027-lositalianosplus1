@@ -7,8 +7,10 @@ v1 (#10, tuned in v1.1): ball out over a touchline or byline.
      clearly out (more than MARGIN_M past the line). The whole stretch counts, so the dead run
      starts when the ball crosses the line, not when it passes the margin.
   2. After it goes out the tracker usually loses the ball (stands, ball boy, off camera): stay
-     dead while the ball is missing, up to MAX_FILL_S, never across halves. The run ends as soon
-     as the ball is seen again inside the pitch.
+     dead up to MAX_FILL_S, never across halves. With HOLD_UNTIL_RESTART the run ends at the
+     restart: the ball moving fast again (throw-in, kick) or seen more than RESTART_ZONE_M inside
+     every line; a ball seen again near a line but still (placed for the restart) stays dead.
+     Without it (v1.1) the run ends as soon as the ball is seen again.
   3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped.
 Works with tags == [] (tags are not used yet).
 
@@ -30,6 +32,10 @@ ENABLED = True                 # source: football reasoning: v1 out-of-bounds ru
 MARGIN_M = 0.25                # source: external v1: sweep flat from 0 to 0.25 m (F1 0.503-0.486, P 0.926), 1 m 0.414; football reasoning: whole ball past the line = centre >= 0.11 m past it, 0.25 m keeps a buffer for tracking noise
 MAX_FILL_S = 40.0              # source: external v1: sweep 0 s F1 0.09, 10 s 0.46, flat from 20 to 90 s; football reasoning: throw-in ~15 s, goal kick ~29 s, corner ~34 s (Opta)
 MIN_DEAD_S = 2.0               # source: football reasoning: a real stoppage lasts seconds, shorter runs are glitches; external v1: 1-3 s within 0.01
+HOLD_UNTIL_RESTART = True      # source: football reasoning: after an out play stays dead until the restart, even when the ball is seen again inside the pitch (ball boy, ball placed)
+SPEED_WINDOW_S = 0.2           # source: football reasoning: a thrown or kicked ball covers > 1 m in 0.2 s, well above ~0.5 m tracking error
+RESTART_SPEED_MS = 6.0         # source: football reasoning: throw-ins and kicks start faster than a ball carried or placed by hand
+RESTART_ZONE_M = 10.0          # source: football reasoning: every restart after an out is near a line (touchline, corner arc, goal area 5.5 m); seen farther inside = play has restarted
 
 
 def detect(frames, feats, tags):
@@ -50,6 +56,15 @@ def detect(frames, feats, tags):
     max_fill = int(MAX_FILL_S * config.FPS)
     min_dead = int(MIN_DEAD_S * config.FPS)
 
+    # restart = the ball moves fast again, or is seen far from every line (own speed from
+    # positions, so the external and the real tracker are treated the same way)
+    w = int(SPEED_WINDOW_S * config.FPS)
+    speed = np.full(n, np.nan)
+    speed[w:] = np.linalg.norm(frames["ball"][w:] - frames["ball"][:-w], axis=1) / SPEED_WINDOW_S
+    with np.errstate(invalid="ignore"):
+        to_line = np.minimum(np.minimum(x, length - x), np.minimum(y, width - y))
+        restarted = visible & ((speed > RESTART_SPEED_MS) | (to_line > RESTART_ZONE_M))
+
     # 1 + 2: stretches past a line that are clearly out (or continue a dead run), then the gap after
     i = 0
     while i < n:
@@ -62,7 +77,9 @@ def detect(frames, feats, tags):
         if past_margin[i:j].any() or (i > 0 and dead[i - 1]):
             dead[i:j] = True
             k = j
-            while k < n and k - j < max_fill and not visible[k] and half[k] == half[j - 1]:
+            while k < n and k - j < max_fill and half[k] == half[j - 1]:
+                if visible[k] and (restarted[k] or not HOLD_UNTIL_RESTART):
+                    break
                 dead[k] = True
                 k += 1
         i = j
