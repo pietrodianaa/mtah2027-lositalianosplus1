@@ -5,7 +5,7 @@ Prints only totals over all games (no frame indices):
   - predicted D runs that touch no true dead stretch ("isolated": they split a possession)
     vs false frames attached to a true dead stretch ("boundary": they only move an edge);
   - true dead stretches touched at least in part (recall by stretch, not by frame).
-Runs v1.1 (HOLD_UNTIL_RESTART off) and v2 (on) side by side.
+Runs v1.1 (HOLD_UNTIL_RESTART off) and v1.2 (on) side by side.
 Run from the repo root:  python experiments/edoardo/diagnose_dead.py
 """
 
@@ -61,7 +61,7 @@ for hold in (False, True):
             t["true_stretches"] += 1
             t["touched"] += bool(pred[start:end].any())
     f = max(t["false"], 1)
-    print("\n== {} ==".format("v2 (hold until restart)" if hold else "v1.1 (no hold)"))
+    print("\n== {} ==".format("v1.2 (hold until restart)" if hold else "v1.1 (no hold)"))
     print("predicted D frames: {}  false: {} ({:.1%} of predicted)".format(t["pred"], t["false"], t["false"] / max(t["pred"], 1)))
     print("false D by ball state: past a line {:.1%}, missing {:.1%}, visible inside {:.1%}".format(
         t["false_past_line"] / f, t["false_missing"] / f, t["false_inside"] / f))

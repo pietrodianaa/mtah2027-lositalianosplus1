@@ -2,7 +2,7 @@
 
 detect(frames, feats, tags) -> (N,) bool, True = dead ball (label D).
 
-v2 (#10): ball out over a touchline or byline, dead until the restart.
+v1.2 (#10): ball out over a touchline or byline, dead until the restart.
   1. A stretch where the visible ball is beyond a line is dead if, somewhere in it, the ball is
      clearly out (more than MARGIN_M past the line). The whole stretch counts, so the dead run
      starts when the ball crosses the line, not when it passes the margin.
