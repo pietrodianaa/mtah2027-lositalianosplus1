@@ -4,8 +4,8 @@ Rules (organisers, 3 Nov 2026): never tune on the ground truth, the public 5 min
 or the provided game. External data is optional: football reasoning is the default source of
 every number.
 
-Dataset: SkillCorner open data (github.com/SkillCorner/opendata), MIT license, free: 10 A-League
-2024/25 matches, broadcast tracking of players and ball at 10 fps with per-frame possession info.
+Dataset: SkillCorner open data (github.com/SkillCorner/opendata), MIT license, free: 20 A-League
+2024/25 matches at the pinned commit (its README still says 10), broadcast tracking of players and ball at 10 fps with per-frame possession info.
 Clone it into external_data/ (gitignored); never commit it. Credit SkillCorner in the tech doc.
 
 Contract (what the owner implements)
