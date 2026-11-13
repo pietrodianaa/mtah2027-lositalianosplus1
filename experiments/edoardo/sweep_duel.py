@@ -1,5 +1,5 @@
 """Scratch: v2.2 (a duel at the ball before everyone walks = a foul), at possession level, v2.1 otherwise as on main.
-20 external games only, never the provided match. First row = duel off (v2.1 on main).
+20 external games only, never the provided match. First row = duel off (v2.1 on main). Round 2: after a duel a looser walk (DUEL_WALK_SPEED_MS) is enough; no backdating.
 Columns (totals over all games):
   F1 even / odd = dead_F1 on even / odd games separately (a real gain shows in both halves)
   isolated / far = our D runs touching no true stoppage (each splits a possession) / >= 10 s from any
@@ -17,10 +17,10 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from possession import config, dead_ball, external, features, scores  # noqa: E402
 
-DUELS_M = [1.0, 1.5, 2.0]                # source: football reasoning: both players within ~1-2 m of the ball (tracking error ~0.5 m)
-LOOKBACKS_S = [2.0, 4.0]                 # source: football reasoning: whistle ~1 s after the foul, players slow 1-2 s later
-DUEL_WALKS_S = [4.0, 6.0]                # source: external v1: 8 s without a duel (v2.1); shorter after a duel
-BACKDATES = [False, True]                # source: football reasoning: dead from the foul, not from the slowdown
+DUELS_M = [2.0, 3.0]                     # source: external v1 round 1: 2 m touched the most stops; 3 m to catch more duels
+LOOKBACKS_S = [4.0, 6.0]                 # source: external v1 round 1: 4 s better than 2 s; 6 s for late slowdowns
+DUEL_SPEEDS_MS = [1.0, 1.5, 2.0]         # source: football reasoning: after a duel a looser walk is enough (rule 2b alone: 1.0)
+DUEL_WALKS_S = [3.0, 4.0, 6.0]           # source: football reasoning: setting up even a quick free kick takes a few seconds
 FAR_S = 10.0                    # source: football reasoning: 10 s from any stoppage = clearly open play
 SWALLOWED_SHARE = 0.9           # source: football reasoning: a possession 90% under D is lost for matching
 
@@ -54,13 +54,14 @@ for frames, feats, tags, truth in games:
         same_total += before in ("H", "A") and before == after
 print("true stoppages with the same team before and after:", same_total)
 
-print("\nduel_m  look  walk  back  precision  recall  dead_F1  F1_even  F1_odd   isolated  far  same_touched  swallowed")
-settings = [None] + [(m, l, w, b) for m in DUELS_M for l in LOOKBACKS_S for w in DUEL_WALKS_S for b in BACKDATES]
+print("\nduel_m  look  speed  walk  precision  recall  dead_F1  F1_even  F1_odd   isolated  far  same_touched  swallowed")
+settings = [None] + [(m, l, v, w) for m in DUELS_M for l in LOOKBACKS_S for v in DUEL_SPEEDS_MS for w in DUEL_WALKS_S]
+dead_ball.DUEL_BACKDATE = False
 for setting in settings:
     dead_ball.DUEL_ENABLED = setting is not None
     if setting is not None:
-        dead_ball.DUEL_M, dead_ball.DUEL_LOOKBACK_S, dead_ball.DUEL_WALK_MIN_S, dead_ball.DUEL_BACKDATE = setting
-        name = "{:5.1f}  {:4.0f}  {:4.0f}  {:>4}".format(setting[0], setting[1], setting[2], "yes" if setting[3] else "no")
+        dead_ball.DUEL_M, dead_ball.DUEL_LOOKBACK_S, dead_ball.DUEL_WALK_SPEED_MS, dead_ball.DUEL_WALK_MIN_S = setting
+        name = "{:5.1f}  {:4.0f}  {:5.1f}  {:4.0f}".format(*setting)
     else:
         name = "duel off (main)"
     rows, isolated, far, same_touched, swallowed = [], 0, 0, 0, 0

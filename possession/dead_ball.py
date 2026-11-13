@@ -22,7 +22,7 @@ seen frames: dead. Catches fouls where the ball is carried to the spot or rolls 
 when the players speed up again, so a pass back to the taker does not end it.
 v2.2 (#10, Edoardo's idea): a duel before the walk. If both teams' nearest players are within DUEL_M
 of the ball at most DUEL_LOOKBACK_S before the walk starts, it is a foul: DUEL_WALK_MIN_S of walking
-is enough and the dead run starts at the duel.
+is enough, below DUEL_WALK_SPEED_MS (looser than WALK_SPEED_MS).
   3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped (all rules).
 Works with tags == [] (tags are not used yet).
 
@@ -68,7 +68,8 @@ DUEL_ENABLED = True            # source: football reasoning (Edoardo): a foul is
 DUEL_M = 1.5                   # source: football reasoning: in a duel both players are within ~1.5 m of the ball (tracking error ~0.5 m)
 DUEL_LOOKBACK_S = 3.0          # source: football reasoning: whistle ~1 s after the foul, players slow down 1-2 s later
 DUEL_WALK_MIN_S = 6.0          # source: football reasoning: after a duel a shorter walk is enough to call it a foul (external v2.1 sweep: 6 s F1 0.681 vs 8 s 0.663, but more open-play D without a duel)
-DUEL_BACKDATE = True           # source: football reasoning: play is dead from the foul, not from when the players have slowed down
+DUEL_BACKDATE = False          # source: external v1 (sweep_duel.py round 1): backdating to the duel adds swallowed possessions (up to 42) for <= +0.004 F1
+DUEL_WALK_SPEED_MS = 1.5       # source: football reasoning: after a duel, a slower-than-play walk is enough; a slow build-up rarely starts with a duel (rule 2b alone needs 1.0)
 
 
 def detect(frames, feats, tags):
@@ -178,6 +179,7 @@ def detect(frames, feats, tags):
                 duel = (feats["nearest_dist_H"] < DUEL_M) & (feats["nearest_dist_A"] < DUEL_M)
         lookback = int(DUEL_LOOKBACK_S * config.FPS)
         duel_walk = int(DUEL_WALK_MIN_S * config.FPS)
+        # plain walk: everyone below WALK_SPEED_MS for at least WALK_MIN_S
         i = 0
         while i < n:
             if not walking[i]:
@@ -188,17 +190,27 @@ def detect(frames, feats, tags):
                 j += 1
             seen = visible[i:j]
             share = passing[i:j][seen].mean() if seen.any() else 0.0
-            if share <= WALK_BALL_FAST_SHARE:
-                start = i
-                if DUEL_ENABLED and duel[max(i - lookback, 0):i + 1].any():
-                    # a duel at the ball just before the walk: a foul. Shorter walk needed, dead from the duel
-                    if j - i >= duel_walk:
-                        last = max(i - lookback, 0) + np.flatnonzero(duel[max(i - lookback, 0):i + 1])[-1]
-                        start = last if DUEL_BACKDATE else i
-                        dead[start:j] = True
-                elif j - i >= min_walk:
-                    dead[i:j] = True
+            if j - i >= min_walk and share <= WALK_BALL_FAST_SHARE:
+                dead[i:j] = True
             i = j
+        # after a duel at the ball (a foul): a looser and shorter walk is enough
+        if DUEL_ENABLED:
+            walking_duel = (smooth < DUEL_WALK_SPEED_MS) & (n_tracked > 0)
+            i = 0
+            while i < n:
+                if not walking_duel[i]:
+                    i += 1
+                    continue
+                j = i
+                while j < n and walking_duel[j]:
+                    j += 1
+                seen = visible[i:j]
+                share = passing[i:j][seen].mean() if seen.any() else 0.0
+                window = duel[max(i - lookback, 0):i + 1]
+                if j - i >= duel_walk and share <= WALK_BALL_FAST_SHARE and window.any():
+                    last = max(i - lookback, 0) + np.flatnonzero(window)[-1]
+                    dead[last if DUEL_BACKDATE else i:j] = True
+                i = j
 
     # 3: drop dead runs too short to be a stoppage
     i = 0
