@@ -20,6 +20,9 @@ Rule 2b (#10): everyone walks. The players' average speed (smoothed over WALK_SM
 WALK_SPEED_MS for at least WALK_MIN_S and the ball is passed on at most WALK_BALL_FAST_SHARE of the
 seen frames: dead. Catches fouls where the ball is carried to the spot or rolls away; the run ends
 when the players speed up again, so a pass back to the taker does not end it.
+v2.2 (#10, Edoardo's idea): a duel before the walk. If both teams' nearest players are within DUEL_M
+of the ball at most DUEL_LOOKBACK_S before the walk starts, it is a foul: DUEL_WALK_MIN_S of walking
+is enough and the dead run starts at the duel.
   3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped (all rules).
 Works with tags == [] (tags are not used yet).
 
@@ -60,6 +63,12 @@ WALK_SPEED_MS = 1.0            # source: football reasoning: slow walking ~1 m/s
 WALK_MIN_S = 8.0               # source: football reasoning: setting up a free kick takes several seconds; external v1: 4/6/8 s isolated runs 56/34/29 (main 27), 8 s for transfer to full-pitch tracking
 WALK_BALL_FAST_MS = 4.0        # source: football reasoning: a pass moves faster than a ball carried by hand or on foot (same scale as RESTART_SPEED_MS)
 WALK_BALL_FAST_SHARE = 0.15    # source: football reasoning: during a stoppage the ball is passed at most once or twice; external v1: 0.05/0.15 same isolated runs, 0.30 more
+# v2.2, duel before the walk (a foul): both teams at the ball, then everyone walks within a few seconds
+DUEL_ENABLED = True            # source: football reasoning (Edoardo): a foul is a duel at the ball (an H and an A player in the same spot) right before the whistle
+DUEL_M = 1.5                   # source: football reasoning: in a duel both players are within ~1.5 m of the ball (tracking error ~0.5 m)
+DUEL_LOOKBACK_S = 3.0          # source: football reasoning: whistle ~1 s after the foul, players slow down 1-2 s later
+DUEL_WALK_MIN_S = 6.0          # source: football reasoning: after a duel a shorter walk is enough to call it a foul (external v2.1 sweep: 6 s F1 0.681 vs 8 s 0.663, but more open-play D without a duel)
+DUEL_BACKDATE = True           # source: football reasoning: play is dead from the foul, not from when the players have slowed down
 
 
 def detect(frames, feats, tags):
@@ -163,6 +172,12 @@ def detect(frames, feats, tags):
         with np.errstate(invalid="ignore"):
             passing = speed > WALK_BALL_FAST_MS
         min_walk = int(WALK_MIN_S * config.FPS)
+        duel = np.zeros(n, dtype=bool)
+        if DUEL_ENABLED:
+            with np.errstate(invalid="ignore"):
+                duel = (feats["nearest_dist_H"] < DUEL_M) & (feats["nearest_dist_A"] < DUEL_M)
+        lookback = int(DUEL_LOOKBACK_S * config.FPS)
+        duel_walk = int(DUEL_WALK_MIN_S * config.FPS)
         i = 0
         while i < n:
             if not walking[i]:
@@ -173,8 +188,16 @@ def detect(frames, feats, tags):
                 j += 1
             seen = visible[i:j]
             share = passing[i:j][seen].mean() if seen.any() else 0.0
-            if j - i >= min_walk and share <= WALK_BALL_FAST_SHARE:
-                dead[i:j] = True
+            if share <= WALK_BALL_FAST_SHARE:
+                start = i
+                if DUEL_ENABLED and duel[max(i - lookback, 0):i + 1].any():
+                    # a duel at the ball just before the walk: a foul. Shorter walk needed, dead from the duel
+                    if j - i >= duel_walk:
+                        last = max(i - lookback, 0) + np.flatnonzero(duel[max(i - lookback, 0):i + 1])[-1]
+                        start = last if DUEL_BACKDATE else i
+                        dead[start:j] = True
+                elif j - i >= min_walk:
+                    dead[i:j] = True
             i = j
 
     # 3: drop dead runs too short to be a stoppage
