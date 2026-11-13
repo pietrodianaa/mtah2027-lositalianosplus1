@@ -54,12 +54,12 @@ STILL_BRIDGE_S = 2.0           # source: football reasoning: a ball unseen for a
 STILL_BRIDGE_M = 1.0           # source: football reasoning: same spot = within 1 m, about twice the tracking error
 STILL_BACKDATE = True          # source: football reasoning: a ball still now vs STILL_WINDOW_S ago was already still during that window; external v1: +0.003 to +0.006, no extra isolated runs
 # rule 2b, everyone walks (fouls where the ball is carried or rolls away): players slow, ball rarely passed
-WALK_ENABLED = True            # source: football reasoning: after a whistle every player walks while the free kick is set up, even if the ball is carried or rolls away
+WALK_ENABLED = True            # source: football reasoning: after a whistle every player walks while the free kick is set up; external v1: F1 0.590 -> 0.663, gain on even and odd games
 WALK_SMOOTH_S = 1.0            # source: football reasoning: average the players' speed over 1 s so a single stride or tracking jitter does not count
-WALK_SPEED_MS = 1.5            # source: football reasoning: walking pace is ~1-1.5 m/s; in open play the average player moves faster
-WALK_MIN_S = 6.0               # source: football reasoning: setting up a free kick takes several seconds; slow spells in open play are shorter
+WALK_SPEED_MS = 1.0            # source: football reasoning: slow walking ~1 m/s; external v1: 1.5 or 2 m/s flood open play (isolated D runs up to 349), 1.0 keeps precision ~0.93
+WALK_MIN_S = 8.0               # source: football reasoning: setting up a free kick takes several seconds; external v1: 4/6/8 s isolated runs 56/34/29 (main 27), 8 s for transfer to full-pitch tracking
 WALK_BALL_FAST_MS = 4.0        # source: football reasoning: a pass moves faster than a ball carried by hand or on foot (same scale as RESTART_SPEED_MS)
-WALK_BALL_FAST_SHARE = 0.15    # source: football reasoning: during a stoppage the ball is passed at most once or twice (back to the taker); in a slow build-up it is passed often
+WALK_BALL_FAST_SHARE = 0.15    # source: football reasoning: during a stoppage the ball is passed at most once or twice; external v1: 0.05/0.15 same isolated runs, 0.30 more
 
 
 def detect(frames, feats, tags):
