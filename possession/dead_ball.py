@@ -20,6 +20,9 @@ Rule 2b (#10): everyone walks. The players' average speed (smoothed over WALK_SM
 WALK_SPEED_MS for at least WALK_MIN_S and the ball is passed on at most WALK_BALL_FAST_SHARE of the
 seen frames: dead. Catches fouls where the ball is carried to the spot or rolls away; the run ends
 when the players speed up again, so a pass back to the taker does not end it.
+v2.2 (#10, Edoardo's idea): a foul before the walk. An H and an A player both at the ball and one of
+them, running, stops right after: if everyone then walks (shorter walk than rule 2b), dead until the
+ball is kicked from near the foul spot (Law 13: the free kick is taken where the foul happened).
   3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped (all rules).
 Works with tags == [] (tags are not used yet).
 
@@ -60,6 +63,20 @@ WALK_SPEED_MS = 1.0            # source: football reasoning: slow walking ~1 m/s
 WALK_MIN_S = 8.0               # source: football reasoning: setting up a free kick takes several seconds; external v1: 4/6/8 s isolated runs 56/34/29 (main 27), 8 s for transfer to full-pitch tracking
 WALK_BALL_FAST_MS = 4.0        # source: football reasoning: a pass moves faster than a ball carried by hand or on foot (same scale as RESTART_SPEED_MS)
 WALK_BALL_FAST_SHARE = 0.15    # source: football reasoning: during a stoppage the ball is passed at most once or twice; external v1: 0.05/0.15 same isolated runs, 0.30 more
+# v2.2, a foul (Edoardo): an H and an A player at the ball, one of them stops, then everyone walks;
+# the free kick is taken where the foul happened (Law 13), so only a kick from that spot ends the stoppage
+FOUL_ENABLED = True            # source: football reasoning (Edoardo): a foul is two opponents at the ball and one of them stopping right away
+FOUL_DUEL_M = 1.5              # source: football reasoning: in a duel both players are within ~1.5 m of the ball (tracking error ~0.5 m)
+FOUL_MOVING_MS = 2.0           # source: football reasoning: the player was running into the duel (faster than a jog)
+FOUL_STOP_MS = 1.0             # source: football reasoning: after a foul one of the two stops or falls (slower than walking)
+FOUL_STOP_WITHIN_S = 2.0       # source: football reasoning: a fouled player stops or falls within a second or two, and before the others start walking
+FOUL_LOOKBACK_S = 4.0          # source: football reasoning: whistle ~1 s after the foul, players slow down 1-2 s later
+FOUL_WALK_SPEED_MS = 1.0       # source: football reasoning: same walking pace as rule 2b
+FOUL_WALK_MIN_S = 4.0          # source: football reasoning: after a confirmed foul a shorter walk is enough (rule 2b alone: 8 s)
+FOUL_PASS_SHARE = 0.3          # source: football reasoning (Edoardo): after a foul the ball may roll away and be passed back to the taker, more ball movement than rule 2b allows
+FOUL_PLACED_MS = 1.5           # source: football reasoning: the free kick is taken with a stationary ball (Law 13); 1.5 m/s over 0.2 s tolerates tracking jitter
+FOUL_SPOT_M = None             # source: football reasoning: free kick from the foul spot (Law 13), in practice with some tolerance; None = end when players speed up
+FOUL_SPOT_GRACE_S = 5.0        # source: football reasoning: players start moving into position a few seconds before the kick
 
 
 def detect(frames, feats, tags):
@@ -175,6 +192,73 @@ def detect(frames, feats, tags):
             share = passing[i:j][seen].mean() if seen.any() else 0.0
             if j - i >= min_walk and share <= WALK_BALL_FAST_SHARE:
                 dead[i:j] = True
+            i = j
+
+    # v2.2: a foul before the walk. Duel = nearest H and nearest A player both within FOUL_DUEL_M of the
+    # ball; foul = one of the two was running and stops within FOUL_STOP_WITHIN_S. If everyone then
+    # walks (FOUL_WALK_SPEED_MS for FOUL_WALK_MIN_S, starting at most FOUL_LOOKBACK_S after the foul),
+    # dead from the walk start until the ball is kicked from within FOUL_SPOT_M of the foul spot.
+    if WALK_ENABLED and FOUL_ENABLED:
+        players = frames["players"]
+        home = frames["team"] == 0
+        away = frames["team"] == 1
+        dist = np.linalg.norm(players - frames["ball"][:, None, :], axis=2)
+        dist = np.where(np.isnan(dist), np.inf, dist)
+        slot_h = np.flatnonzero(home)[dist[:, home].argmin(axis=1)]
+        slot_a = np.flatnonzero(away)[dist[:, away].argmin(axis=1)]
+        duel = (dist[:, home].min(axis=1) < FOUL_DUEL_M) & (dist[:, away].min(axis=1) < FOUL_DUEL_M)
+        # per-player speed averaged over 0.4 s (an untracked player can be neither moving nor stopped)
+        ps = frames["player_speed"]
+        ok = ~np.isnan(ps)
+        q = max(int(0.4 * config.FPS), 1)
+        csum = np.cumsum(np.vstack((np.zeros((1, ps.shape[1])), np.where(ok, ps, 0.0))), axis=0)
+        ccnt = np.cumsum(np.vstack((np.zeros((1, ps.shape[1])), ok.astype(float))), axis=0)
+        low = np.maximum(np.arange(n) - q + 1, 0)
+        cnt = ccnt[np.arange(n) + 1] - ccnt[low]
+        pspeed = np.where(cnt > 0, (csum[np.arange(n) + 1] - csum[low]) / np.maximum(cnt, 1), np.nan)
+        walking_foul = (smooth < FOUL_WALK_SPEED_MS) & (n_tracked > 0)
+        foul_look = int(FOUL_LOOKBACK_S * config.FPS)
+        before = int(1.0 * config.FPS)
+        within = int(FOUL_STOP_WITHIN_S * config.FPS)
+        foul_walk = int(FOUL_WALK_MIN_S * config.FPS)
+        grace = int(FOUL_SPOT_GRACE_S * config.FPS)
+        i = 0
+        while i < n:
+            if not walking_foul[i]:
+                i += 1
+                continue
+            j = i
+            while j < n and walking_foul[j]:
+                j += 1
+            seen = visible[i:j]
+            share = passing[i:j][seen].mean() if seen.any() else 0.0
+            spot = None
+            if j - i >= foul_walk and share <= FOUL_PASS_SHARE:
+                # latest duel before the walk where one of the two was running and then stops
+                for t in range(i, max(i - foul_look, before) - 1, -1):
+                    if not duel[t]:
+                        continue
+                    for slot in (slot_h[t], slot_a[t]):
+                        was = pspeed[t - before:t + 1, slot]
+                        after = pspeed[t:min(t + within, n), slot]
+                        others = mean_speed[t:min(t + within, n)]
+                        with np.errstate(invalid="ignore"):
+                            # he was running and stops while the others are still moving (before the whistle)
+                            stops = (after < FOUL_STOP_MS) & (others >= FOUL_WALK_SPEED_MS)
+                            if np.nanmax(was, initial=0.0) > FOUL_MOVING_MS and stops.any():
+                                spot = frames["ball"][t]
+                    if spot is not None:
+                        break
+            if spot is not None:
+                end = j
+                if FOUL_SPOT_M is not None:
+                    # the restart: a stationary ball (Law 13) starts moving fast from near the foul spot
+                    for k in range(i + 2 * w, min(j + grace, n)):
+                        if visible[k] and speed[k] > RESTART_SPEED_MS and speed[k - w] < FOUL_PLACED_MS \
+                                and np.linalg.norm(frames["ball"][k - w] - spot) < FOUL_SPOT_M:
+                            end = k
+                            break
+                dead[i:end] = True
             i = j
 
     # 3: drop dead runs too short to be a stoppage
