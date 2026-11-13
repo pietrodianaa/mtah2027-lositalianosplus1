@@ -20,6 +20,9 @@ Rule 2b (#10): everyone walks. The players' average speed (smoothed over WALK_SM
 WALK_SPEED_MS for at least WALK_MIN_S and the ball is passed on at most WALK_BALL_FAST_SHARE of the
 seen frames: dead. Catches fouls where the ball is carried to the spot or rolls away; the run ends
 when the players speed up again, so a pass back to the taker does not end it.
+Rule 1 check (#10): a new out is kept only if the players' average speed (1 s smoothed) drops below
+OUT_SLOW_MS within OUT_CONFIRM_S; if everyone keeps running, play went on (aerial ball seen past
+the line in 2D, tracking error).
   3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped (all rules).
 Works with tags == [] (tags are not used yet).
 
@@ -43,6 +46,9 @@ HOLD_UNTIL_RESTART = True      # source: football reasoning: after an out play s
 SPEED_WINDOW_S = 0.2           # source: football reasoning: a thrown or kicked ball covers > 1 m in 0.2 s, well above ~0.5 m tracking error
 RESTART_SPEED_MS = 4.0         # source: external v1: sweep 4/6/9 m/s, F1 flat (0.545-0.558), precision 0.916/0.899/0.873, so 4 (fewest false D); football reasoning: throws and kicks start faster than a ball carried or placed
 RESTART_ZONE_M = 6.0           # source: football reasoning: every restart after an out is near a line (touchline, corner arc, goal area 5.5 m deep); external v1: 6/10/20 m flat, 6 m best precision
+OUT_CONFIRM_ENABLED = True     # source: football reasoning: after a real out every player slows down; if they keep running, play went on (aerial ball seen past the line in 2D, tracking error)
+OUT_CONFIRM_S = 4.0            # source: football reasoning: players ease off within a few seconds of the ball going out
+OUT_SLOW_MS = 2.0              # source: football reasoning: in open play the average player moves at ~2-3 m/s; after an out the average drops below a jog
 # rule 2, ball still (fouls, offsides): ball placed, nobody on it, players walking
 STILL_ENABLED = True           # source: football reasoning: after a whistle the ball is placed and play waits; external v1: F1 0.545 -> 0.590 with bridge + backdate, precision up, far isolated D runs unchanged (9)
 STILL_WINDOW_S = 1.0           # source: football reasoning: 1 s tells a placed ball from tracking jitter (~0.5 m); external v1: 0.5 s no better, more isolated runs with a 2 s bridge
@@ -89,6 +95,16 @@ def detect(frames, feats, tags):
         to_line = np.minimum(np.minimum(x, length - x), np.minimum(y, width - y))
         restarted = visible & ((speed > RESTART_SPEED_MS) | (to_line > RESTART_ZONE_M))
 
+    # players' average speed, smoothed over 1 s (rule 1 check and rule 2b)
+    player_speed = frames["player_speed"]
+    tracked = ~np.isnan(player_speed)
+    n_tracked = tracked.sum(axis=1)
+    mean_speed = np.where(tracked, player_speed, 0.0).sum(axis=1) / np.maximum(n_tracked, 1)
+    k_smooth = max(int(WALK_SMOOTH_S * config.FPS), 1)
+    smooth = np.convolve(mean_speed, np.ones(k_smooth) / k_smooth, mode="same")
+    smooth[n_tracked == 0] = np.nan
+    out_confirm = int(OUT_CONFIRM_S * config.FPS)
+
     # 1 + 2: stretches past a line that are clearly out (or continue a dead run), then the gap after
     i = 0
     while i < n:
@@ -98,6 +114,14 @@ def detect(frames, feats, tags):
         j = i
         while j < n and past_line[j]:
             j += 1
+        new_out = past_margin[i:j].any() and not (i > 0 and dead[i - 1])
+        if new_out and OUT_CONFIRM_ENABLED:
+            # a real out makes everyone slow down within OUT_CONFIRM_S; no tracked players = no evidence, keep it
+            after = smooth[i:min(i + out_confirm, n)]
+            seen_after = ~np.isnan(after)
+            if seen_after.any() and after[seen_after].min() >= OUT_SLOW_MS:
+                i = j
+                continue
         if past_margin[i:j].any() or (i > 0 and dead[i - 1]):
             dead[i:j] = True
             k = j
@@ -153,13 +177,8 @@ def detect(frames, feats, tags):
     # rule 2b: everyone walks for at least WALK_MIN_S and the ball is rarely passed; the run ends
     # when the players speed up again (the restart), so a pass back to the taker does not end it
     if WALK_ENABLED:
-        player_speed = frames["player_speed"]
-        tracked = ~np.isnan(player_speed)
-        n_tracked = tracked.sum(axis=1)
-        mean_speed = np.where(tracked, player_speed, 0.0).sum(axis=1) / np.maximum(n_tracked, 1)
-        k = max(int(WALK_SMOOTH_S * config.FPS), 1)
-        smooth = np.convolve(mean_speed, np.ones(k) / k, mode="same")
-        walking = (smooth < WALK_SPEED_MS) & (n_tracked > 0)
+        with np.errstate(invalid="ignore"):
+            walking = (smooth < WALK_SPEED_MS) & (n_tracked > 0)
         with np.errstate(invalid="ignore"):
             passing = speed > WALK_BALL_FAST_MS
         min_walk = int(WALK_MIN_S * config.FPS)
