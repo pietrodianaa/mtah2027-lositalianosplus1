@@ -17,11 +17,6 @@ UNSEEN_GAP_S and comes back at a restart spot (within RESTART_ZONE_M of a line, 
 UNSEEN_CENTRE_M of the centre spot for a kick-off), and players walk (mean speed below
 UNSEEN_WALK_MS) on at least UNSEEN_WALK_SHARE of the gap: the gap is dead, then held until the
 restart as in rule 1.
-Rule 4 (#10): kick-off shape (after a goal, at the start of a half). Law 8: at a kick-off every
-player is in his own half and the ball is on the centre mark. Both teams split by the halfway line
-(at least KICKOFF_SHARE of each team's tracked players on its side, KICKOFF_TOL_M of slack, at
-least KICKOFF_MIN_PLAYERS per team tracked), players walking, ball unseen or within
-KICKOFF_BALL_M of the centre spot, for at least KICKOFF_MIN_S: dead. Ends at the kick-off.
 Rule 2 (#10): ball still after a whistle (fouls, offsides). The ball barely moves for
 STILL_WINDOW_S, nobody is within STILL_CLEAR_M of it (the taker steps away for the run-up; this
 excludes a keeper holding the ball or a player with it at his feet) and players walk on average:
@@ -62,14 +57,6 @@ UNSEEN_GAP_S = 3.0             # source: football reasoning: a ball fetched and 
 UNSEEN_WALK_MS = 2.0           # source: football reasoning: below jogging pace = play has stopped (rule 2b uses 1.0 m/s smoothed); external v1 (sweep_unseen.py round 2): 1.5 vs 2.0 m/s at 6 m, share 0.5: spell_proxy 0.849 vs 0.852
 UNSEEN_WALK_SHARE = 0.5        # source: football reasoning: during a real stop players walk most of the time, on a wing in open play they run (wide wingers hug the touchline); external v1 (diagnose_unseen.py): walking share 1.00 on 1c runs at true stops, 0.21 on isolated ones; sweep round 2: 0/0.3/0.5/0.7 at 6 m, 2 m/s spell_proxy 0.853/0.853/0.852/0.851, isolated 132/115/107/103
 UNSEEN_CENTRE_M = 3.0          # source: football reasoning: a ball back on the centre spot is a kick-off (after a goal: the ball went over the goal line unseen)
-# rule 4, kick-off shape: both teams in their own half, ball on the centre spot, players waiting
-KICKOFF_ENABLED = True         # source: football reasoning: Law 8, before a kick-off every player is in his own half and the ball is on the centre mark
-KICKOFF_SHARE = 0.9            # source: football reasoning: all players in their own half, minus one tracking error per ~10 players
-KICKOFF_TOL_M = 1.0            # source: football reasoning: players stand on the halfway line, ~0.5 m tracking error
-KICKOFF_MIN_PLAYERS = 6        # source: football reasoning: with fewer players tracked per team a split by the halfway line can happen by chance
-KICKOFF_BALL_M = 3.0           # source: football reasoning: ball on the centre mark, ~0.5 m tracking error plus the taker touching it
-KICKOFF_WALK_MS = 2.0          # source: football reasoning: players wait for the whistle, below jogging pace (same as UNSEEN_WALK_MS)
-KICKOFF_MIN_S = 3.0            # source: football reasoning: teams take several seconds to line up for a kick-off
 # rule 2, ball still (fouls, offsides): ball placed, nobody on it, players walking
 STILL_ENABLED = True           # source: football reasoning: after a whistle the ball is placed and play waits; external v1: F1 0.545 -> 0.590 with bridge + backdate, precision up, far isolated D runs unchanged (9)
 STILL_WINDOW_S = 1.0           # source: football reasoning: 1 s tells a placed ball from tracking jitter (~0.5 m); external v1: 0.5 s no better, more isolated runs with a 2 s bridge
@@ -174,43 +161,6 @@ def detect(frames, feats, tags):
                         break
                     dead[k] = True
                     k += 1
-            i = j
-
-    # rule 4: kick-off shape, both teams split by the halfway line, ball on the centre spot
-    if KICKOFF_ENABLED:
-        px = frames["players"][:, :, 0]
-        team = np.asarray(frames["team"])
-        mid = length / 2
-        with np.errstate(invalid="ignore"):
-            left = px < mid + KICKOFF_TOL_M
-            right = px > mid - KICKOFF_TOL_M
-        seen_p = ~np.isnan(px)
-        split = np.zeros(n, dtype=bool)
-        for home_side, away_side in ((left, right), (right, left)):
-            ok_side = np.ones(n, dtype=bool)
-            for t, side in ((0, home_side), (1, away_side)):
-                cols = team == t
-                n_t = seen_p[:, cols].sum(axis=1)
-                on_side = (side[:, cols] & seen_p[:, cols]).sum(axis=1)
-                ok_side &= (n_t >= KICKOFF_MIN_PLAYERS) & (on_side >= KICKOFF_SHARE * n_t)
-            split |= ok_side
-        ps = frames["player_speed"]
-        n_ps = (~np.isnan(ps)).sum(axis=1)
-        mean_ps = np.where(np.isnan(ps), 0.0, ps).sum(axis=1) / np.maximum(n_ps, 1)
-        with np.errstate(invalid="ignore"):
-            on_spot = np.hypot(x - mid, y - width / 2) <= KICKOFF_BALL_M
-        waiting = split & (n_ps > 0) & (mean_ps < KICKOFF_WALK_MS) & (~visible | on_spot)
-        min_ko = int(KICKOFF_MIN_S * config.FPS)
-        i = 0
-        while i < n:
-            if not waiting[i]:
-                i += 1
-                continue
-            j = i
-            while j < n and waiting[j]:
-                j += 1
-            if j - i >= min_ko:
-                dead[i:j] = True
             i = j
 
     # rule 2: ball still with nobody on it and players walking, for at least STILL_MIN_S
