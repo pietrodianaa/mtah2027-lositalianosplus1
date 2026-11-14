@@ -11,6 +11,11 @@ v1.2 (#10): ball out over a touchline or byline, dead until the restart.
      restart: the ball moving fast again (throw-in, kick) or seen more than RESTART_ZONE_M inside
      every line; a ball seen again near a line but still (placed for the restart) stays dead.
      Without it (v1.1) the run ends as soon as the ball is seen again.
+Rule 1c (#10): outs the tracker does not see. The ball (ball_v2: gaps up to 1 s already filled) is
+last seen within UNSEEN_LAST_M of a line, optionally heading to it, then stays unseen for at least
+UNSEEN_GAP_S and comes back at a restart spot (within RESTART_ZONE_M of a line, or within
+UNSEEN_CENTRE_M of the centre spot for a kick-off): the gap is dead, then held until the restart
+as in rule 1.
 Rule 2 (#10): ball still after a whistle (fouls, offsides). The ball barely moves for
 STILL_WINDOW_S, nobody is within STILL_CLEAR_M of it (the taker steps away for the run-up; this
 excludes a keeper holding the ball or a player with it at his feet) and players walk on average:
@@ -43,6 +48,12 @@ HOLD_UNTIL_RESTART = True      # source: football reasoning: after an out play s
 SPEED_WINDOW_S = 0.2           # source: football reasoning: a thrown or kicked ball covers > 1 m in 0.2 s, well above ~0.5 m tracking error
 RESTART_SPEED_MS = 4.0         # source: external v1: sweep 4/6/9 m/s, F1 flat (0.545-0.558), precision 0.916/0.899/0.873, so 4 (fewest false D); football reasoning: throws and kicks start faster than a ball carried or placed
 RESTART_ZONE_M = 6.0           # source: football reasoning: every restart after an out is near a line (touchline, corner arc, goal area 5.5 m deep); external v1: 6/10/20 m flat, 6 m best precision
+# rule 1c, outs the tracker does not see: ball lost next to a line, back at a restart spot
+UNSEEN_ENABLED = True          # source: football reasoning: after an out the broadcast camera often loses the ball (stands, ball boy) before it is seen past the line; external v1 (diagnose_coverage.py): 34.9% of dead frames are in stops we never touch
+UNSEEN_LAST_M = 3.0            # source: football reasoning: a ball last seen within ~3 m of a line and lost goes out within a fraction of a second
+UNSEEN_HEADING = True          # source: football reasoning: a ball going out was last seen moving towards that line
+UNSEEN_GAP_S = 3.0             # source: football reasoning: a ball fetched and placed for a throw-in takes several seconds; short losses are tracker noise (ball_v2 fills up to 1 s)
+UNSEEN_CENTRE_M = 3.0          # source: football reasoning: a ball back on the centre spot is a kick-off (after a goal: the ball went over the goal line unseen)
 # rule 2, ball still (fouls, offsides): ball placed, nobody on it, players walking
 STILL_ENABLED = True           # source: football reasoning: after a whistle the ball is placed and play waits; external v1: F1 0.545 -> 0.590 with bridge + backdate, precision up, far isolated D runs unchanged (9)
 STILL_WINDOW_S = 1.0           # source: football reasoning: 1 s tells a placed ball from tracking jitter (~0.5 m); external v1: 0.5 s no better, more isolated runs with a 2 s bridge
@@ -107,6 +118,40 @@ def detect(frames, feats, tags):
                 dead[k] = True
                 k += 1
         i = j
+
+    # rule 1c: ball lost next to a line (heading to it), back at a restart spot after a long gap
+    if UNSEEN_ENABLED:
+        ball2 = feats["ball_v2"]
+        vis2 = ~np.isnan(ball2[:, 0])
+        with np.errstate(invalid="ignore"):
+            to_line2 = np.minimum(np.minimum(ball2[:, 0], length - ball2[:, 0]),
+                                  np.minimum(ball2[:, 1], width - ball2[:, 1]))
+            to_centre2 = np.hypot(ball2[:, 0] - length / 2, ball2[:, 1] - width / 2)
+        min_gap = int(UNSEEN_GAP_S * config.FPS)
+        i = 1
+        while i < n:
+            if vis2[i]:
+                i += 1
+                continue
+            j = i
+            while j < n and not vis2[j]:
+                j += 1
+            last = i - 1
+            ok = (vis2[last] and j < n and j - i >= min_gap and half[last] == half[j]
+                  and to_line2[last] <= UNSEEN_LAST_M
+                  and (to_line2[j] <= RESTART_ZONE_M or to_centre2[j] <= UNSEEN_CENTRE_M))
+            if ok and UNSEEN_HEADING:
+                before = last - w
+                ok = before >= 0 and vis2[before] and to_line2[last] < to_line2[before]
+            if ok:
+                dead[i:j] = True
+                k = j
+                while k < n and k - j < max_fill and half[k] == half[j - 1]:
+                    if visible[k] and restarted[k]:
+                        break
+                    dead[k] = True
+                    k += 1
+            i = j
 
     # rule 2: ball still with nobody on it and players walking, for at least STILL_MIN_S
     if STILL_ENABLED:
