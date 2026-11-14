@@ -73,27 +73,34 @@ for game_id in external.games():
     ps = frames["player_speed"]
     n_ps = (~np.isnan(ps)).sum(axis=1)
     mean_ps = np.where(np.isnan(ps), 0.0, ps).sum(axis=1) / np.maximum(n_ps, 1)
-    added = full & ~without["rule 1c (unseen out)"] & graded
-    for start, end in runs(added):
-        i = start                                  # the 1c run starts at the first unseen frame
-        if i == 0 or not vis2[i - 1]:
+    added = full & ~without["rule 1c (unseen out)"]
+    nearest = feats["nearest_dist"]
+    for start, end in runs(full & graded):
+        if not added[start:end].any():
             continue
-        j = i
-        while j < len(vis2) and not vis2[j]:
-            j += 1
-        if j >= len(vis2):
+        group = "good" if true_dead[start:end].any() else "isolated"
+        k = start + int(np.flatnonzero(added[start:end])[0])     # first frame rule 1c adds
+        p = k - 1                                                # last seen before the gap
+        while p > 0 and not vis2[p]:
+            p -= 1
+        q = k                                                    # first seen after it
+        while q < len(vis2) and not vis2[q]:
+            q += 1
+        if q >= len(vis2) or not vis2[p]:
             continue
-        group = "good" if true_dead[max(start - 1, 0):end + 1].any() else "isolated"
-        last, back = ball2[i - 1], ball2[j]
-        add(group, "unseen gap s", (j - i) / config.FPS)
-        add(group, "last seen: m to line", to_line[i - 1])
-        add(group, "back: m to line", to_line[j])
+        last, back = ball2[p], ball2[q]
+        add(group, "unseen gap s", (q - p) / config.FPS)
+        add(group, "gap share untracked (X)", float((truth[p:q] == "X").mean()))
+        add(group, "last seen: m to line", to_line[p])
+        add(group, "back: m to line", to_line[q])
         add(group, "moved while unseen m", float(np.hypot(*(back - last))))
-        add(group, "last seen near byline", float(on_byline[i - 1]))
-        add(group, "back near byline", float(on_byline[j]))
+        add(group, "back near byline", float(on_byline[q]))
+        add(group, "back: nearest player m", nearest[q])
+        add(group, "back with a player <1.5 m", float(nearest[q] < 1.5) if not np.isnan(nearest[q]) else np.nan)
         add(group, "back in centre circle", float(np.hypot(back[0] - length / 2, back[1] - width / 2) <= CENTRE_M))
-        sp = mean_ps[i:j][n_ps[i:j] > 0]
+        sp = mean_ps[p:q][n_ps[p:q] > 0]
         add(group, "players m/s in gap", float(np.median(sp)) if sp.size else np.nan)
+        add(group, "D after the ball is back s", max(end - q, 0) / config.FPS)
         add(group, "D run length s", (end - start) / config.FPS)
 
 print("labels v{}, dead ball v3.2, {} games\n".format(external.LABELS_VERSION, len(external.games())))
@@ -110,7 +117,7 @@ for key in feats_b["good"]:
         v = v[~np.isnan(v)]
         if not v.size:
             cells.append("-")
-        elif key.startswith(("last seen near", "back near", "back in")):
+        elif key.startswith(("back near", "back in", "back with", "gap share")):
             cells.append("{:.0f}%".format(100 * v.mean()))
         else:
             cells.append("{:.1f} [{:.1f}-{:.1f}]".format(np.median(v), *np.percentile(v, [25, 75])))
