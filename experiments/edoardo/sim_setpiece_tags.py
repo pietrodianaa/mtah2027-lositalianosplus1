@@ -56,11 +56,10 @@ def fake_tags(truth, share, n_false, at_whistle, rng):
 
 
 SCENARIOS = [("no tags (main)", None),
-             ("every restart tagged", (1.0, 0, False)),
              ("40% tagged", (TAGGED_SHARE, 0, False)),
              ("40% + 10 false per game", (TAGGED_SHARE, FALSE_PER_GAME, False)),
              ("40%, window at the whistle", (TAGGED_SHARE, 0, True))]
-FILTERS = [0.0, 0.5]   # source: football reasoning: rule 6 without / with the players-walk check (share of the 3 s)
+FILTERS = [(2.0, 0.5), (2.0, 0.8), (2.0, 1.0), (1.5, 0.5), (1.5, 0.8), (1.5, 1.0)]   # source: football reasoning: walk check, speed below jogging / walking pace, on half / most / all of the 3 s
 
 acc = {}
 for g, game_id in enumerate(external.games()):
@@ -71,14 +70,14 @@ for g, game_id in enumerate(external.games()):
         tags = [] if sc is None else fake_tags(truth, sc[0], sc[1], sc[2], rng)
         for before in ([None] if sc is None else FILTERS):
             if before is not None:
-                dead_ball.SETPIECE_WALK_SHARE = before
+                dead_ball.SETPIECE_WALK_MS, dead_ball.SETPIECE_WALK_SHARE = before
             pred = dead_ball.detect(frames, feats, tags)
-            key = name if before is None else "{} | {}".format(name, "walk check" if before else "no check")
+            key = name if before is None else "{} | < {} m/s on {:.0%}".format(name, *before)
             a = acc.setdefault(key, {"f1": [], "perf": [], "real": []})
             a["f1"].append(scores.dead_ball(pred, truth)["dead_F1"])
             a["perf"].append(proxy_perfect(pred, truth))
             a["real"].append(scores._evaluate(truth, postprocess.finalize(scores.synthetic_evidence(truth), pred, frames))["spellF1"])
-    dead_ball.SETPIECE_WALK_SHARE = 0.5
+    dead_ball.SETPIECE_WALK_MS, dead_ball.SETPIECE_WALK_SHARE = 2.0, 0.5
     print("game {}/{} done".format(g + 1, len(external.games())), flush=True)
     del frames, feats
 
