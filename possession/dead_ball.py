@@ -36,8 +36,9 @@ seen frames: dead. Catches fouls where the ball is carried to the spot or rolls 
 when the players speed up again, so a pass back to the taker does not end it.
 Rule 6 (#10): Smart Tagging set pieces, reinforcement only. Every SET PIECES interval is a ~5 s
 window around a restart (starter/load_smart_tagging.py), so the ball was dead just before it: the
-SETPIECE_BEFORE_S before each set-piece start are dead (same half). Never removes a dead frame,
-does nothing with tags == [] (external matches).
+SETPIECE_BEFORE_S before each set-piece start are dead (same half) if players walk (below
+SETPIECE_WALK_MS) on at least SETPIECE_WALK_SHARE of them, which skips automatic false tags in open
+play. Never removes a dead frame, does nothing with tags == [] (external matches).
   3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped (all rules).
 Works with tags == [] (tags are not used yet).
 
@@ -101,7 +102,9 @@ WALK_BALL_FAST_SHARE = 0.15    # source: football reasoning: during a stoppage t
 # rule 6, Smart Tagging set pieces (reinforcement only; tags are empty on external matches)
 SETPIECE_ENABLED = True        # source: football reasoning: DATA.md, every set piece is a restart and every restart ends a dead-ball stretch; the tag window (~5 s around the restart, starter/load_smart_tagging.py) starts before the restart
 SETPIECE_CODE = "set pieces"   # source: data format (DATA.md: code SET PIECES, matched case-insensitively)
-SETPIECE_BEFORE_S = 3.0        # source: football reasoning: even a quick throw-in or free kick waits a few seconds before the restart, so the 3 s before a window that already starts before the restart are dead
+SETPIECE_BEFORE_S = 3.0        # source: football reasoning: even a quick throw-in or free kick waits a few seconds before the restart, so the 3 s before a window that already starts before the restart are dead; external v1 (sim_setpiece_tags.py, fake tags): 3 s beats 6 s in every scenario
+SETPIECE_WALK_MS = 2.0         # source: football reasoning: before a restart players wait below jogging pace (same as UNSEEN_WALK_MS)
+SETPIECE_WALK_SHARE = 0.5      # source: football reasoning: players walk on ~all real stops and run in open play (diagnose_missed.py, diagnose_unseen.py), so a false tag in open play, or a window starting before the whistle, is skipped
 
 
 def detect(frames, feats, tags):
@@ -309,6 +312,9 @@ def detect(frames, feats, tags):
     # rule 6: the seconds before each tagged set piece are dead (adds only, never removes)
     if SETPIECE_ENABLED and tags:
         before = int(SETPIECE_BEFORE_S * config.FPS)
+        ps = frames["player_speed"]
+        n_ps = (~np.isnan(ps)).sum(axis=1)
+        mean_ps = np.where(np.isnan(ps), 0.0, ps).sum(axis=1) / np.maximum(n_ps, 1)
         for tag in tags:
             if str(tag.get("code", "")).strip().lower() != SETPIECE_CODE:
                 continue
@@ -316,6 +322,10 @@ def detect(frames, feats, tags):
             if start <= 0 or start > n:
                 continue
             first = max(start - before, 0)
+            seen_ps = n_ps[first:start] > 0
+            if SETPIECE_WALK_SHARE > 0 and not (seen_ps.any() and
+                    (mean_ps[first:start][seen_ps] < SETPIECE_WALK_MS).mean() >= SETPIECE_WALK_SHARE):
+                continue
             same_half = half[first:start] == half[start - 1]
             dead[first:start] |= same_half
 
