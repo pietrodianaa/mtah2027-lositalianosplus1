@@ -27,7 +27,7 @@ HOME, AWAY = 0, 1
 SMOOTH_WINDOW = 50             # source: official baseline default (frames; baseline_smooth50)
 METHOD = "hysteresis"          # source: football reasoning: possession is sticky, a team keeps it until the other clearly wins it ("baseline" = majority vote)
 SWITCH_CONFIRM_S = 1.0         # source: football reasoning: a real turnover means the other team controls the ball for about a second; passes and duels flip the nearest team for less
-LONG_GAP_DEAD_S = 8.0          # source: football reasoning: restarts (throw-in, goal kick, free kick) stop play well over 8 s, while the tracker loses the ball in open play in shorter bursts
+LONG_GAP_DEAD_S = None         # source: football reasoning: off since dead_ball.py detects stoppages directly; a ball the tracker cannot see is still in play and stays with the last team (was 8.0 s as a stopgap; team decision Nov 12). A number of seconds turns it back on
 
 
 def majority_smooth(evidence, window):
@@ -95,6 +95,6 @@ def finalize(evidence, dead, frames):
         labels = majority_smooth(evidence, SMOOTH_WINDOW)
         labels[dead] = "D"
         return labels
-    # ponytail: long gaps -> D is a stopgap until dead_ball.py is ready
-    dead = dead | long_gaps(evidence, int(LONG_GAP_DEAD_S * config.FPS))
+    if LONG_GAP_DEAD_S is not None:   # old stopgap from before dead_ball.py: long blind gaps -> D
+        dead = dead | long_gaps(evidence, int(LONG_GAP_DEAD_S * config.FPS))
     return hysteresis(evidence, dead, max(int(SWITCH_CONFIRM_S * config.FPS), 1))

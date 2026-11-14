@@ -16,7 +16,11 @@ STILL_WINDOW_S, nobody is within STILL_CLEAR_M of it (the taker steps away for t
 excludes a keeper holding the ball or a player with it at his feet) and players walk on average:
 dead if that lasts at least STILL_MIN_S (backdated by the window). Short tracker gaps where the
 ball reappears on the same spot are bridged. Ends when the ball moves or a player reaches it.
-  3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped (both rules).
+Rule 2b (#10): everyone walks. The players' average speed (smoothed over WALK_SMOOTH_S) stays below
+WALK_SPEED_MS for at least WALK_MIN_S and the ball is passed on at most WALK_BALL_FAST_SHARE of the
+seen frames: dead. Catches fouls where the ball is carried to the spot or rolls away; the run ends
+when the players speed up again, so a pass back to the taker does not end it.
+  3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped (all rules).
 Works with tags == [] (tags are not used yet).
 
 Signals still to try (each from football reasoning; check with `python run.py --tune --role dead_ball`):
@@ -49,6 +53,13 @@ STILL_MIN_S = 3.0              # source: football reasoning: setting up even a q
 STILL_BRIDGE_S = 2.0           # source: football reasoning: a ball unseen for a moment that reappears on the same spot has not moved (tracker loses it ~41% of frames); external v1: 0/1/2 s F1 0.560/0.582/0.590
 STILL_BRIDGE_M = 1.0           # source: football reasoning: same spot = within 1 m, about twice the tracking error
 STILL_BACKDATE = True          # source: football reasoning: a ball still now vs STILL_WINDOW_S ago was already still during that window; external v1: +0.003 to +0.006, no extra isolated runs
+# rule 2b, everyone walks (fouls where the ball is carried or rolls away): players slow, ball rarely passed
+WALK_ENABLED = True            # source: football reasoning: after a whistle every player walks while the free kick is set up; external v1: F1 0.590 -> 0.663, gain on even and odd games
+WALK_SMOOTH_S = 1.0            # source: football reasoning: average the players' speed over 1 s so a single stride or tracking jitter does not count
+WALK_SPEED_MS = 1.0            # source: football reasoning: slow walking ~1 m/s; external v1: 1.5 or 2 m/s flood open play (isolated D runs up to 349), 1.0 keeps precision ~0.93
+WALK_MIN_S = 8.0               # source: football reasoning: setting up a free kick takes several seconds; external v1: 4/6/8 s isolated runs 56/34/29 (main 27), 8 s for transfer to full-pitch tracking
+WALK_BALL_FAST_MS = 4.0        # source: football reasoning: a pass moves faster than a ball carried by hand or on foot (same scale as RESTART_SPEED_MS)
+WALK_BALL_FAST_SHARE = 0.15    # source: football reasoning: during a stoppage the ball is passed at most once or twice; external v1: 0.05/0.15 same isolated runs, 0.30 more
 
 
 def detect(frames, feats, tags):
@@ -137,6 +148,33 @@ def detect(frames, feats, tags):
                 j += 1
             if j - i >= min_still:
                 dead[max(i - ws, 0) if STILL_BACKDATE else i:j] = True
+            i = j
+
+    # rule 2b: everyone walks for at least WALK_MIN_S and the ball is rarely passed; the run ends
+    # when the players speed up again (the restart), so a pass back to the taker does not end it
+    if WALK_ENABLED:
+        player_speed = frames["player_speed"]
+        tracked = ~np.isnan(player_speed)
+        n_tracked = tracked.sum(axis=1)
+        mean_speed = np.where(tracked, player_speed, 0.0).sum(axis=1) / np.maximum(n_tracked, 1)
+        k = max(int(WALK_SMOOTH_S * config.FPS), 1)
+        smooth = np.convolve(mean_speed, np.ones(k) / k, mode="same")
+        walking = (smooth < WALK_SPEED_MS) & (n_tracked > 0)
+        with np.errstate(invalid="ignore"):
+            passing = speed > WALK_BALL_FAST_MS
+        min_walk = int(WALK_MIN_S * config.FPS)
+        i = 0
+        while i < n:
+            if not walking[i]:
+                i += 1
+                continue
+            j = i
+            while j < n and walking[j]:
+                j += 1
+            seen = visible[i:j]
+            share = passing[i:j][seen].mean() if seen.any() else 0.0
+            if j - i >= min_walk and share <= WALK_BALL_FAST_SHARE:
+                dead[i:j] = True
             i = j
 
     # 3: drop dead runs too short to be a stoppage
