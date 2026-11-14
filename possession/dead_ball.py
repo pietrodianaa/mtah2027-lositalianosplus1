@@ -31,10 +31,6 @@ Rule 2b (#10): everyone walks. The players' average speed (smoothed over WALK_SM
 WALK_SPEED_MS for at least WALK_MIN_S and the ball is passed on at most WALK_BALL_FAST_SHARE of the
 seen frames: dead. Catches fouls where the ball is carried to the spot or rolls away; the run ends
 when the players speed up again, so a pass back to the taker does not end it.
-Rule 2c (#10): everyone walks near a restart zone. With the ball (last known position) in a penalty
-area or within ZONE_LINE_M of a line, a shorter and looser walk is enough: players' mean speed
-(smoothed over WALK_SMOOTH_S) below ZONE_WALK_MS for at least ZONE_MIN_S, ball passed on at most
-WALK_BALL_FAST_SHARE of the seen frames. Catches goal kicks, throw-ins and corners being set up.
 Rule 5 (#10): wall at a free kick (Law 13: opponents at least 9.15 m from the ball). At least
 WALL_N players of one team standing (< WALL_STAND_MS) side by side (each within WALL_GAP_M of
 another), WALL_MIN_M to WALL_MAX_M from the ball, for at least WALL_MIN_S: dead, held until the
@@ -95,14 +91,6 @@ WALK_SPEED_MS = 1.0            # source: football reasoning: slow walking ~1 m/s
 WALK_MIN_S = 8.0               # source: football reasoning: setting up a free kick takes several seconds; external v1: 4/6/8 s isolated runs 56/34/29 (main 27), 8 s for transfer to full-pitch tracking
 WALK_BALL_FAST_MS = 4.0        # source: football reasoning: a pass moves faster than a ball carried by hand or on foot (same scale as RESTART_SPEED_MS)
 WALK_BALL_FAST_SHARE = 0.15    # source: football reasoning: during a stoppage the ball is passed at most once or twice; external v1: 0.05/0.15 same isolated runs, 0.30 more
-
-# rule 2c, everyone walks near a restart zone (goal kicks, throw-ins, corners being set up)
-ZONE_ENABLED = True            # source: football reasoning: goal kicks, throw-ins and corners are set up near a goal or a line while players walk; external v1 (diagnose_missed.py): players walk on ~all untouched stops, 55% of their frames have the ball within 30 m of a goal or near a line
-ZONE_LINE_M = 6.0              # source: football reasoning: a restart after an out is taken within ~6 m of a line (same as RESTART_ZONE_M)
-ZONE_BOX_DEPTH_M = 16.5        # source: football reasoning: Law 1, penalty area 16.5 m deep (goal kicks are taken inside it)
-ZONE_BOX_WIDTH_M = 40.32       # source: football reasoning: Law 1, penalty area 40.32 m wide
-ZONE_WALK_MS = 2.0             # source: football reasoning: below jogging pace while a restart is set up
-ZONE_MIN_S = 4.0               # source: football reasoning: fetching and placing the ball for a restart takes several seconds
 
 # rule 5, wall at a free kick: players of one team standing side by side ~9.15 m from the ball
 WALL_ENABLED = True            # source: football reasoning: Law 13, at a free kick near goal the defenders build a wall 9.15 m from the ball; open play never shows players standing shoulder to shoulder
@@ -304,41 +292,6 @@ def detect(frames, feats, tags):
             seen = visible[i:j]
             share = passing[i:j][seen].mean() if seen.any() else 0.0
             if j - i >= min_walk and share <= WALK_BALL_FAST_SHARE:
-                dead[i:j] = True
-            i = j
-
-    # rule 2c: everyone walks with the ball near a goal or a line, for at least ZONE_MIN_S
-    if ZONE_ENABLED:
-        bx = feats["ball_v2"][:, 0].copy()
-        by = feats["ball_v2"][:, 1].copy()
-        for i in range(1, n):                     # last known position, same half
-            if np.isnan(bx[i]) and half[i] == half[i - 1]:
-                bx[i], by[i] = bx[i - 1], by[i - 1]
-        with np.errstate(invalid="ignore"):
-            in_box = ((bx <= ZONE_BOX_DEPTH_M) | (bx >= length - ZONE_BOX_DEPTH_M)) \
-                & (np.abs(by - width / 2) <= ZONE_BOX_WIDTH_M / 2)
-            near = np.minimum(np.minimum(bx, length - bx), np.minimum(by, width - by)) <= ZONE_LINE_M
-        zone = in_box | (near if ZONE_LINE_M > 0 else False)
-        ps = frames["player_speed"]
-        n_ps = (~np.isnan(ps)).sum(axis=1)
-        mean_ps = np.where(np.isnan(ps), 0.0, ps).sum(axis=1) / np.maximum(n_ps, 1)
-        k = max(int(WALK_SMOOTH_S * config.FPS), 1)
-        smooth = np.convolve(mean_ps, np.ones(k) / k, mode="same")
-        with np.errstate(invalid="ignore"):
-            passing = speed > WALK_BALL_FAST_MS
-        waiting = zone & (smooth < ZONE_WALK_MS) & (n_ps > 0)
-        min_zone = int(ZONE_MIN_S * config.FPS)
-        i = 0
-        while i < n:
-            if not waiting[i]:
-                i += 1
-                continue
-            j = i
-            while j < n and waiting[j]:
-                j += 1
-            seen = visible[i:j]
-            share = passing[i:j][seen].mean() if seen.any() else 0.0
-            if j - i >= min_zone and share <= WALK_BALL_FAST_SHARE:
                 dead[i:j] = True
             i = j
 

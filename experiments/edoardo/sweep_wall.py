@@ -1,4 +1,4 @@
-"""Scratch: rule 5, wall at a free kick (Law 13), at possession level, the rest as on branch 10-walk-zone.
+"""Scratch: rule 5, wall at a free kick (Law 13), at possession level, the rest as on main (v3.1).
 20 external games only, never the provided match. Loads one game at a time (the wall needs every
 player's position and speed). First row = rule 5 off. Columns as in sweep_unseen.py:
   F1 even / odd = dead_F1 on even / odd games; isolated / far = our D runs touching no true stop / >= 10 s
@@ -77,7 +77,7 @@ print("\nlabels v{}".format(external.LABELS_VERSION))
 print("n  range_m     min_s   precision  recall  dead_F1  F1_even  F1_odd   isolated  far  same_touched  swallowed  spell_proxy")
 for i, st in enumerate(settings):
     a = acc[i]
-    name = "rule 5 off (v3.1 + 2c)" if st is None else "{}  {:4.1f}-{:<5.1f}  {:5.1f}".format(st[0], st[1][0], st[1][1], st[2])
+    name = "rule 5 off (v3.1)  " if st is None else "{}  {:4.1f}-{:<5.1f}  {:5.1f}".format(st[0], st[1][0], st[1][1], st[2])
     p, r, f = [np.mean([row[k] for row in a["rows"]]) for k in ("dead_precision", "dead_recall", "dead_F1")]
     fe = np.mean([row["dead_F1"] for row in a["rows"][0::2]])
     fo = np.mean([row["dead_F1"] for row in a["rows"][1::2]])
