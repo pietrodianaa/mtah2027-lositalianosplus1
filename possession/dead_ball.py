@@ -34,6 +34,10 @@ Rule 2b (#10): everyone walks. The players' average speed (smoothed over WALK_SM
 WALK_SPEED_MS for at least WALK_MIN_S and the ball is passed on at most WALK_BALL_FAST_SHARE of the
 seen frames: dead. Catches fouls where the ball is carried to the spot or rolls away; the run ends
 when the players speed up again, so a pass back to the taker does not end it.
+Rule 6 (#10): Smart Tagging set pieces, reinforcement only. Every SET PIECES interval is a ~5 s
+window around a restart (starter/load_smart_tagging.py), so the ball was dead just before it: the
+SETPIECE_BEFORE_S before each set-piece start are dead (same half). Never removes a dead frame,
+does nothing with tags == [] (external matches).
   3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped (all rules).
 Works with tags == [] (tags are not used yet).
 
@@ -93,6 +97,11 @@ WALK_SPEED_MS = 1.0            # source: football reasoning: slow walking ~1 m/s
 WALK_MIN_S = 8.0               # source: football reasoning: setting up a free kick takes several seconds; external v1: 4/6/8 s isolated runs 56/34/29 (main 27), 8 s for transfer to full-pitch tracking
 WALK_BALL_FAST_MS = 4.0        # source: football reasoning: a pass moves faster than a ball carried by hand or on foot (same scale as RESTART_SPEED_MS); external v1 (sweep_walk2.py): 3/4/6 m/s at 1 s spell_proxy 0.8521/0.8523/0.8524, 6 m/s F1 +0.003 with more swallowed (66): kept 4
 WALK_BALL_FAST_SHARE = 0.15    # source: football reasoning: during a stoppage the ball is passed at most once or twice; external v1: 0.05/0.15 same isolated runs, 0.30 more
+
+# rule 6, Smart Tagging set pieces (reinforcement only; tags are empty on external matches)
+SETPIECE_ENABLED = True        # source: football reasoning: DATA.md, every set piece is a restart and every restart ends a dead-ball stretch; the tag window (~5 s around the restart, starter/load_smart_tagging.py) starts before the restart
+SETPIECE_CODE = "set pieces"   # source: data format (DATA.md: code SET PIECES, matched case-insensitively)
+SETPIECE_BEFORE_S = 3.0        # source: football reasoning: even a quick throw-in or free kick waits a few seconds before the restart, so the 3 s before a window that already starts before the restart are dead
 
 
 def detect(frames, feats, tags):
@@ -296,6 +305,19 @@ def detect(frames, feats, tags):
             if j - i >= min_walk and share <= WALK_BALL_FAST_SHARE:
                 dead[i:j] = True
             i = j
+
+    # rule 6: the seconds before each tagged set piece are dead (adds only, never removes)
+    if SETPIECE_ENABLED and tags:
+        before = int(SETPIECE_BEFORE_S * config.FPS)
+        for tag in tags:
+            if str(tag.get("code", "")).strip().lower() != SETPIECE_CODE:
+                continue
+            start = int(tag["start_frame"])
+            if start <= 0 or start > n:
+                continue
+            first = max(start - before, 0)
+            same_half = half[first:start] == half[start - 1]
+            dead[first:start] |= same_half
 
     # 3: drop dead runs too short to be a stoppage
     i = 0
