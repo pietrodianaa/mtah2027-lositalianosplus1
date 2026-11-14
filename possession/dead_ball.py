@@ -50,9 +50,9 @@ RESTART_SPEED_MS = 4.0         # source: external v1: sweep 4/6/9 m/s, F1 flat (
 RESTART_ZONE_M = 6.0           # source: football reasoning: every restart after an out is near a line (touchline, corner arc, goal area 5.5 m deep); external v1: 6/10/20 m flat, 6 m best precision
 # rule 1c, outs the tracker does not see: ball lost next to a line, back at a restart spot
 UNSEEN_ENABLED = True          # source: football reasoning: after an out the broadcast camera often loses the ball (stands, ball boy) before it is seen past the line; external v1 (diagnose_coverage.py): 34.9% of dead frames are in stops we never touch
-UNSEEN_LAST_M = 3.0            # source: football reasoning: a ball last seen within ~3 m of a line and lost goes out within a fraction of a second
-UNSEEN_HEADING = True          # source: football reasoning: a ball going out was last seen moving towards that line
-UNSEEN_GAP_S = 3.0             # source: football reasoning: a ball fetched and placed for a throw-in takes several seconds; short losses are tracker noise (ball_v2 fills up to 1 s)
+UNSEEN_LAST_M = 6.0            # source: football reasoning: a ball lost within a few metres of a line, back at a restart spot after seconds, went out; external v1 (sweep_unseen.py): 1.5/3/6 m spell_proxy 0.845/0.850/0.853 at 3 s
+UNSEEN_HEADING = False         # source: football reasoning: a ball going out moves towards the line, but the last seen frames are often a deflection or a bounce; external v1: the heading check lowers spell_proxy at every setting (0.848 vs 0.853 at 6 m, 3 s)
+UNSEEN_GAP_S = 3.0             # source: football reasoning: a ball fetched and placed for a throw-in takes several seconds; short losses are tracker noise (ball_v2 fills up to 1 s); external v1: 1.5 s floods isolated D runs (263 at 6 m), 3 vs 5 s spell_proxy 0.853/0.852
 UNSEEN_CENTRE_M = 3.0          # source: football reasoning: a ball back on the centre spot is a kick-off (after a goal: the ball went over the goal line unseen)
 # rule 2, ball still (fouls, offsides): ball placed, nobody on it, players walking
 STILL_ENABLED = True           # source: football reasoning: after a whistle the ball is placed and play waits; external v1: F1 0.545 -> 0.590 with bridge + backdate, precision up, far isolated D runs unchanged (9)
