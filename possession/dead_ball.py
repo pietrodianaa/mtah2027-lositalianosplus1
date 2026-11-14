@@ -11,6 +11,9 @@ v1.2 (#10): ball out over a touchline or byline, dead until the restart.
      restart: the ball moving fast again (throw-in, kick) or seen more than RESTART_ZONE_M inside
      every line; a ball seen again near a line but still (placed for the restart) stays dead.
      Without it (v1.1) the run ends as soon as the ball is seen again.
+  With OUT_BACKDATE (v2.3) a new out run starts earlier, at the last touch: from the first frame
+     past the line, walk back while no player is within OUT_TOUCH_M of the ball (or the ball is
+     unseen), at most OUT_BACKDATE_S. The ball travelling alone towards the line is already going out.
 Rule 2 (#10): ball still after a whistle (fouls, offsides). The ball barely moves for
 STILL_WINDOW_S, nobody is within STILL_CLEAR_M of it (the taker steps away for the run-up; this
 excludes a keeper holding the ball or a player with it at his feet) and players walk on average:
@@ -42,6 +45,9 @@ MIN_DEAD_S = 2.0               # source: football reasoning: a real stoppage las
 HOLD_UNTIL_RESTART = True      # source: football reasoning: after an out play stays dead until the restart, even with the ball seen again inside (ball boy, ball placed); external v1: F1 0.486 -> 0.545
 SPEED_WINDOW_S = 0.2           # source: football reasoning: a thrown or kicked ball covers > 1 m in 0.2 s, well above ~0.5 m tracking error
 RESTART_SPEED_MS = 4.0         # source: external v1: sweep 4/6/9 m/s, F1 flat (0.545-0.558), precision 0.916/0.899/0.873, so 4 (fewest false D); football reasoning: throws and kicks start faster than a ball carried or placed
+OUT_BACKDATE = True            # source: football reasoning: from the last touch the ball travels alone to the line, play is already over; external v1 (diagnose_coverage.py): touched outs start a median 1.0 s late
+OUT_TOUCH_M = 1.5              # source: football reasoning: a ball within 1.5 m of a player is at his feet (same scale as STILL_CLEAR_M)
+OUT_BACKDATE_S = 3.0           # source: football reasoning: a ball kicked or rolling out reaches the line within ~1-3 s (30 m at 10-30 m/s)
 RESTART_ZONE_M = 6.0           # source: football reasoning: every restart after an out is near a line (touchline, corner arc, goal area 5.5 m deep); external v1: 6/10/20 m flat, 6 m best precision
 # rule 2, ball still (fouls, offsides): ball placed, nobody on it, players walking
 STILL_ENABLED = True           # source: football reasoning: after a whistle the ball is placed and play waits; external v1: F1 0.545 -> 0.590 with bridge + backdate, precision up, far isolated D runs unchanged (9)
@@ -90,6 +96,9 @@ def detect(frames, feats, tags):
         restarted = visible & ((speed > RESTART_SPEED_MS) | (to_line > RESTART_ZONE_M))
 
     # 1 + 2: stretches past a line that are clearly out (or continue a dead run), then the gap after
+    if OUT_BACKDATE:
+        near_player = feats["nearest_dist"] <= OUT_TOUCH_M        # NaN (ball unseen) = no touch seen
+        max_back = int(OUT_BACKDATE_S * config.FPS)
     i = 0
     while i < n:
         if not past_line[i]:
@@ -99,6 +108,11 @@ def detect(frames, feats, tags):
         while j < n and past_line[j]:
             j += 1
         if past_margin[i:j].any() or (i > 0 and dead[i - 1]):
+            if OUT_BACKDATE and not (i > 0 and dead[i - 1]):
+                b = i                                   # walk back to the last touch
+                while b > 0 and i - b < max_back and half[b - 1] == half[i] and not near_player[b - 1]:
+                    b -= 1
+                dead[b:i] = True
             dead[i:j] = True
             k = j
             while k < n and k - j < max_fill and half[k] == half[j - 1]:
