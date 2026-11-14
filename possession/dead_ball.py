@@ -103,8 +103,8 @@ WALK_BALL_FAST_SHARE = 0.15    # source: football reasoning: during a stoppage t
 SETPIECE_ENABLED = True        # source: football reasoning: DATA.md, every set piece is a restart and every restart ends a dead-ball stretch; the tag window (~5 s around the restart, starter/load_smart_tagging.py) starts before the restart
 SETPIECE_CODE = "set pieces"   # source: data format (DATA.md: code SET PIECES, matched case-insensitively)
 SETPIECE_BEFORE_S = 3.0        # source: football reasoning: even a quick throw-in or free kick waits a few seconds before the restart, so the 3 s before a window that already starts before the restart are dead; external v1 (sim_setpiece_tags.py, fake tags): 3 s beats 6 s in every scenario
-SETPIECE_WALK_MS = 2.0         # source: football reasoning: before a restart players wait below jogging pace (same as UNSEEN_WALK_MS)
-SETPIECE_WALK_SHARE = 0.5      # source: football reasoning: players walk on ~all real stops and run in open play (diagnose_missed.py, diagnose_unseen.py), so a false tag in open play, or a window starting before the whistle, is skipped
+SETPIECE_WALK_MS = 1.5         # source: football reasoning: before a restart players wait at walking pace; external v1 (sim_setpiece_tags.py, fake tags): 1.5 vs 2.0 m/s keeps a window that starts at the whistle (worst case) neutral, realistic proxy 0.7038 vs 0.7006 (main 0.7042)
+SETPIECE_WALK_SHARE = 0.8      # source: football reasoning: players walk on ~all real stops and run in open play (diagnose_missed.py, diagnose_unseen.py), so a false tag in open play, or a window starting before the whistle, is skipped; external v1 (fake tags): realistic proxy 40% tagged 0.7103, + 1 false tag in 7 0.7088, window at the whistle 0.7038, main 0.7042
 
 
 def detect(frames, feats, tags):
