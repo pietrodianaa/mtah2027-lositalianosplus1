@@ -31,10 +31,6 @@ Rule 2b (#10): everyone walks. The players' average speed (smoothed over WALK_SM
 WALK_SPEED_MS for at least WALK_MIN_S and the ball is passed on at most WALK_BALL_FAST_SHARE of the
 seen frames: dead. Catches fouls where the ball is carried to the spot or rolls away; the run ends
 when the players speed up again, so a pass back to the taker does not end it.
-Rule 5 (#10): wall at a free kick (Law 13: opponents at least 9.15 m from the ball). At least
-WALL_N players of one team standing (< WALL_STAND_MS) side by side (each within WALL_GAP_M of
-another), WALL_MIN_M to WALL_MAX_M from the ball, for at least WALL_MIN_S: dead, held until the
-ball is kicked (faster than RESTART_SPEED_MS), at most MAX_FILL_S.
   3. Dead runs shorter than MIN_DEAD_S are tracking glitches, not stoppages: dropped (all rules).
 Works with tags == [] (tags are not used yet).
 
@@ -91,15 +87,6 @@ WALK_SPEED_MS = 1.0            # source: football reasoning: slow walking ~1 m/s
 WALK_MIN_S = 8.0               # source: football reasoning: setting up a free kick takes several seconds; external v1: 4/6/8 s isolated runs 56/34/29 (main 27), 8 s for transfer to full-pitch tracking
 WALK_BALL_FAST_MS = 4.0        # source: football reasoning: a pass moves faster than a ball carried by hand or on foot (same scale as RESTART_SPEED_MS)
 WALK_BALL_FAST_SHARE = 0.15    # source: football reasoning: during a stoppage the ball is passed at most once or twice; external v1: 0.05/0.15 same isolated runs, 0.30 more
-
-# rule 5, wall at a free kick: players of one team standing side by side ~9.15 m from the ball
-WALL_ENABLED = True            # source: football reasoning: Law 13, at a free kick near goal the defenders build a wall 9.15 m from the ball; open play never shows players standing shoulder to shoulder
-WALL_N = 3                     # source: football reasoning: a wall has at least 3 players (2 can be two defenders marking side by side)
-WALL_GAP_M = 1.5               # source: football reasoning: players in a wall stand shoulder to shoulder (< 1 m apart), plus ~0.5 m tracking error
-WALL_MIN_M = 7.0               # source: football reasoning: 9.15 m (Law 13) minus walls creeping forward and tracking error
-WALL_MAX_M = 12.0              # source: football reasoning: 9.15 m plus a wall set a little deeper and tracking error
-WALL_STAND_MS = 1.0            # source: football reasoning: players in a wall stand still while the kick is prepared
-WALL_MIN_S = 2.0               # source: football reasoning: a wall holds its shape for several seconds before the kick
 
 
 def detect(frames, feats, tags):
@@ -293,43 +280,6 @@ def detect(frames, feats, tags):
             share = passing[i:j][seen].mean() if seen.any() else 0.0
             if j - i >= min_walk and share <= WALK_BALL_FAST_SHARE:
                 dead[i:j] = True
-            i = j
-
-    # rule 5: a wall, players of one team standing side by side ~9.15 m from the ball
-    if WALL_ENABLED:
-        players = frames["players"]
-        team = np.asarray(frames["team"])
-        pspeed = frames["player_speed"]
-        ball2 = feats["ball_v2"]
-        wall = np.zeros(n, dtype=bool)
-        with np.errstate(invalid="ignore"):
-            dist_b = np.linalg.norm(players - ball2[:, None, :], axis=2)
-            cand = (dist_b >= WALL_MIN_M) & (dist_b <= WALL_MAX_M) & (pspeed < WALL_STAND_MS)
-        for t in (0, 1):
-            cand_t = cand & (team == t)[None, :]
-            for f in np.flatnonzero(cand_t.sum(axis=1) >= WALL_N):
-                pos = players[f, cand_t[f]]
-                gap = np.linalg.norm(pos[:, None, :] - pos[None, :, :], axis=2)
-                np.fill_diagonal(gap, np.inf)
-                if (gap.min(axis=1) <= WALL_GAP_M).sum() >= WALL_N:
-                    wall[f] = True
-        min_wall = int(WALL_MIN_S * config.FPS)
-        i = 0
-        while i < n:
-            if not wall[i]:
-                i += 1
-                continue
-            j = i
-            while j < n and wall[j]:
-                j += 1
-            if j - i >= min_wall:
-                dead[i:j] = True
-                k = j
-                while k < n and k - j < max_fill and half[k] == half[j - 1]:
-                    if visible[k] and speed[k] > RESTART_SPEED_MS:
-                        break
-                    dead[k] = True
-                    k += 1
             i = j
 
     # 3: drop dead runs too short to be a stoppage
