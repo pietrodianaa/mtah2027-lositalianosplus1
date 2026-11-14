@@ -27,6 +27,9 @@ HOME, AWAY = 0, 1
 SMOOTH_WINDOW = 50             # source: official baseline default (frames; baseline_smooth50)
 METHOD = "hysteresis"          # source: football reasoning: possession is sticky, a team keeps it until the other clearly wins it ("baseline" = majority vote)
 SWITCH_CONFIRM_S = 1.0         # source: football reasoning: a real turnover means the other team controls the ball for about a second; passes and duels flip the nearest team for less
+RESTART_FIX_S = 2.0            # source: football reasoning: a restart gives the ball to one team, and its first pass (throw-in, free kick, goal kick) is usually still in flight or just received 2 s later; evidence for the other team that early means the first frame read the wrong team, so the whole stretch since the restart goes to the team that is confirmed
+RESTART_CONFIRM_S = 0.6        # source: football reasoning: inside that window it takes a little longer than one pass or duel (under half a second) to overturn the restart team, but less than an open-play turnover because we already know a fresh possession has just started
+MIN_SPELL_S = None             # source: football reasoning: off; a run of one team shorter than this between two runs of the other team is a blip (a touch, a block) and merges into them. Real possessions on the practice set are rarely under 1 s (2%), so 1.0 is the largest sensible value; with SWITCH_CONFIRM_S = 1.0 it changes nothing, it only bites with a shorter switch wait
 LONG_GAP_DEAD_S = None         # source: football reasoning: off since dead_ball.py detects stoppages directly; a ball the tracker cannot see is still in play and stays with the last team (was 8.0 s as a stopgap; team decision Nov 12). A number of seconds turns it back on
 
 
@@ -58,14 +61,34 @@ def long_gaps(evidence, min_len):
     return mask
 
 
-def hysteresis(evidence, dead, confirm):
+def merge_short_spells(labels, min_len):
+    """H/A runs shorter than min_len frames with the other team on both sides take that team.
+    Runs that touch D (a restart or a stoppage) are kept: those boundaries come from dead ball."""
+    labels = labels.copy()
+    if min_len <= 1:
+        return labels
+    change = np.flatnonzero(labels[1:] != labels[:-1]) + 1
+    bounds = np.concatenate(([0], change, [len(labels)]))
+    for k in range(1, len(bounds) - 2):
+        s, e = bounds[k], bounds[k + 1]
+        left, right = labels[bounds[k] - 1], labels[e] if e < len(labels) else "D"
+        if e - s < min_len and labels[s] in "HA" and left == right and left in "HA" and left != labels[s]:
+            labels[s:e] = left
+    return labels
+
+
+def hysteresis(evidence, dead, confirm, restart_fix=0, restart_confirm=None):
     """Hold the current team; switch once the other team has `confirm` evidence frames without the
     current team's evidence in between. The switch is dated back to the challenger's first frame.
     No evidence keeps the current team. Dead frames are D and reset; the frames between a reset
     and the next evidence get that evidence's team."""
     labels = np.full(len(evidence), "D", dtype="<U1")
     names = "HA"
+    if restart_confirm is None:
+        restart_confirm = confirm
     cur, start, challenge_start, challenge_n = None, 0, 0, 0
+    first = 0                                          # frame where the current spell's team was first set
+    restart_open = False                               # still inside the window after a restart
     for i, e in enumerate(evidence):
         if dead[i]:
             cur, start = None, i + 1
@@ -73,15 +96,21 @@ def hysteresis(evidence, dead, confirm):
         if cur is None:
             if e < 0:
                 continue
-            cur, challenge_n = e, 0
+            cur, challenge_n, first = e, 0, i
+            restart_open = restart_fix > 0
             labels[start:i] = names[e]                 # restart: backfill to the boundary
         elif e >= 0 and e != cur:
             if challenge_n == 0:
                 challenge_start = i
             challenge_n += 1
-            if challenge_n >= confirm:
+            if restart_open and i - first > restart_fix:
+                restart_open = False
+            need = restart_confirm if restart_open else confirm
+            if challenge_n >= need:
                 cur, challenge_n = e, 0
-                labels[challenge_start:i] = names[e]   # date the turnover back
+                back = start if restart_open else challenge_start
+                labels[back:i] = names[e]              # date the turnover back (to the restart if early)
+                restart_open = False
         elif e == cur:
             challenge_n = 0
         labels[i] = names[cur]
@@ -97,4 +126,10 @@ def finalize(evidence, dead, frames):
         return labels
     if LONG_GAP_DEAD_S is not None:   # old stopgap from before dead_ball.py: long blind gaps -> D
         dead = dead | long_gaps(evidence, int(LONG_GAP_DEAD_S * config.FPS))
-    return hysteresis(evidence, dead, max(int(SWITCH_CONFIRM_S * config.FPS), 1))
+    confirm = max(int(SWITCH_CONFIRM_S * config.FPS), 1)
+    restart_fix = int(RESTART_FIX_S * config.FPS) if RESTART_FIX_S else 0
+    restart_confirm = max(int(RESTART_CONFIRM_S * config.FPS), 1) if RESTART_CONFIRM_S else confirm
+    labels = hysteresis(evidence, dead, confirm, restart_fix, restart_confirm)
+    if MIN_SPELL_S:
+        labels = merge_short_spells(labels, int(MIN_SPELL_S * config.FPS))
+    return labels
