@@ -6,6 +6,9 @@ Columns (totals over all games):
   isolated / far = our D runs touching no true stoppage (each splits a possession) / >= 10 s from any
   same_touched   = true stoppages with the SAME team before and after that we touch
   swallowed      = true possessions at least 90% covered by our D (each one is lost)
+  spell_proxy    = official spellF1 with teams from the truth and D from us: a true dead stretch we
+                   miss keeps the team before it (the team after if our D sits right before), so it
+                   weighs splits, swallowed and merged possessions together; possessions = predicted per game
 Run from the repo root:  python experiments/edoardo/sweep_unseen.py
 """
 
@@ -39,6 +42,18 @@ for game_id in external.games():
 print("loaded", len(games), "games, labels v{}".format(external.LABELS_VERSION))
 
 
+def spell_proxy(pred, truth):
+    """Official spellF1 when everything but dead ball is perfect (others = truth)."""
+    lab = truth.copy()
+    for start, end in runs((truth == "D") & ~pred):
+        prev = lab[start - 1] if start > 0 else "X"
+        nxt = truth[end] if end < len(truth) else "X"
+        lab[start:end] = prev if prev in ("H", "A") else nxt if nxt in ("H", "A") else "D"
+    lab[pred & (truth != "X")] = "D"
+    out = scores._evaluate(truth, lab)
+    return out["spellF1"], out["n_pred_spells"]
+
+
 def runs(mask):
     """(start, end) of every run of True."""
     edges = np.diff(np.concatenate(([0], mask.astype(np.int8), [0])))
@@ -53,7 +68,11 @@ for frames, feats, tags, truth in games:
         same_total += before in ("H", "A") and before == after
 print("true stoppages with the same team before and after:", same_total)
 
-print("\nlast_m  gap_s  head   precision  recall  dead_F1  F1_even  F1_odd   isolated  far  same_touched  swallowed")
+print("\nlast_m  gap_s  head   precision  recall  dead_F1  F1_even  F1_odd   isolated  far  same_touched  swallowed  spell_proxy  possessions")
+for ref_name, make in (("no dead ball at all", lambda t: np.zeros(len(t), dtype=bool)),
+                       ("perfect dead ball", lambda t: (t == "D"))):
+    res = [spell_proxy(make(truth), truth) for _, _, _, truth in games]
+    print("{:18} spell_proxy {:.4f}, possessions {:.1f}".format(ref_name, np.mean([r[0] for r in res]), np.mean([r[1] for r in res])))
 settings = [(None, None, None)] + [(m, g, h) for h in HEADING for m in LAST_M for g in GAP_S]
 for last_m, gap_s, heading in settings:
     dead_ball.UNSEEN_ENABLED = last_m is not None
@@ -62,10 +81,13 @@ for last_m, gap_s, heading in settings:
         name = "{:6.1f}  {:5.1f}  {:5}".format(last_m, gap_s, "yes" if heading else "no")
     else:
         name = "rule 1c off (main)"
-    rows, isolated, far, same_touched, swallowed = [], 0, 0, 0, 0
+    rows, isolated, far, same_touched, swallowed, spells, n_spells = [], 0, 0, 0, 0, [], []
     for frames, feats, tags, truth in games:
         pred = dead_ball.detect(frames, feats, tags)
         rows.append(scores.dead_ball(pred, truth))
+        sp, ns = spell_proxy(pred, truth)
+        spells.append(sp)
+        n_spells.append(ns)
         graded = truth != "X"
         true_dead = (truth == "D") & graded
         true_idx = np.flatnonzero(true_dead)
@@ -86,5 +108,5 @@ for last_m, gap_s, heading in settings:
     p, r, f = [np.mean([row[k] for row in rows]) for k in ("dead_precision", "dead_recall", "dead_F1")]
     f_even = np.mean([row["dead_F1"] for row in rows[0::2]])
     f_odd = np.mean([row["dead_F1"] for row in rows[1::2]])
-    print("{:18} {:9.4f}  {:6.4f}  {:7.4f}  {:7.4f}  {:6.4f}   {:8d}  {:3d}  {:12d}  {:9d}".format(
-        name, p, r, f, f_even, f_odd, isolated, far, same_touched, swallowed), flush=True)
+    print("{:18} {:9.4f}  {:6.4f}  {:7.4f}  {:7.4f}  {:6.4f}   {:8d}  {:3d}  {:12d}  {:9d}  {:11.4f}  {:11.1f}".format(
+        name, p, r, f, f_even, f_odd, isolated, far, same_touched, swallowed, np.mean(spells), np.mean(n_spells)), flush=True)
