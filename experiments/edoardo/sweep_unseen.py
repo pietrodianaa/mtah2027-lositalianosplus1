@@ -1,4 +1,4 @@
-"""Scratch: rule 1c, outs the tracker does not see (v3), at possession level, v2.1 otherwise as on main.
+"""Scratch: rule 1c, outs the tracker does not see (v3); round 2: players-walk filter, gap 3 s, no heading, at possession level, v2.1 otherwise as on main.
 20 external games only, never the provided match. Targets the stops we never touch
 (diagnose_coverage.py: 34.9% of true dead frames). First row = rule 1c off (main).
 Columns (totals over all games):
@@ -20,9 +20,9 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from possession import config, dead_ball, external, features, scores  # noqa: E402
 
-LAST_M = [1.5, 3.0, 6.0]                 # source: football reasoning: last seen on the line / within a stride / within a few metres of it
-GAP_S = [1.5, 3.0, 5.0]                  # source: football reasoning: a quick throw-in takes a couple of seconds, fetching the ball ~5 s or more
-HEADING = [True, False]                  # source: football reasoning: a ball going out moves towards the line it crosses
+LAST_M = [3.0, 6.0]                      # source: external v1 (round 1): the two best last-seen distances at 3 s, no heading
+WALK_MS = [1.5, 2.0]                     # source: football reasoning: walking pace ~1-1.5 m/s, jogging above 2
+WALK_SHARE = [0.3, 0.5, 0.7]             # source: football reasoning: players walk for part / half / most of a real stop; external v1 (diagnose_unseen.py): 1.00 at true stops, 0.21 isolated
 FAR_S = 10.0                    # source: football reasoning: 10 s from any stoppage = clearly open play
 SWALLOWED_SHARE = 0.9           # source: football reasoning: a possession 90% under D is lost for matching
 
@@ -68,17 +68,17 @@ for frames, feats, tags, truth in games:
         same_total += before in ("H", "A") and before == after
 print("true stoppages with the same team before and after:", same_total)
 
-print("\nlast_m  gap_s  head   precision  recall  dead_F1  F1_even  F1_odd   isolated  far  same_touched  swallowed  spell_proxy  possessions")
+print("\nlast_m  walk_ms  share  precision  recall  dead_F1  F1_even  F1_odd   isolated  far  same_touched  swallowed  spell_proxy  possessions")
 for ref_name, make in (("no dead ball at all", lambda t: np.zeros(len(t), dtype=bool)),
                        ("perfect dead ball", lambda t: (t == "D"))):
     res = [spell_proxy(make(truth), truth) for _, _, _, truth in games]
     print("{:18} spell_proxy {:.4f}, possessions {:.1f}".format(ref_name, np.mean([r[0] for r in res]), np.mean([r[1] for r in res])))
-settings = [(None, None, None)] + [(m, g, h) for h in HEADING for m in LAST_M for g in GAP_S]
-for last_m, gap_s, heading in settings:
+settings = [(None, None, None)] + [(m, 1.5, 0.0) for m in LAST_M] + [(m, w, f) for m in LAST_M for w in WALK_MS for f in WALK_SHARE]
+for last_m, walk_ms, share in settings:
     dead_ball.UNSEEN_ENABLED = last_m is not None
     if last_m is not None:
-        dead_ball.UNSEEN_LAST_M, dead_ball.UNSEEN_GAP_S, dead_ball.UNSEEN_HEADING = last_m, gap_s, heading
-        name = "{:6.1f}  {:5.1f}  {:5}".format(last_m, gap_s, "yes" if heading else "no")
+        dead_ball.UNSEEN_LAST_M, dead_ball.UNSEEN_WALK_MS, dead_ball.UNSEEN_WALK_SHARE = last_m, walk_ms, share
+        name = "{:6.1f}  {:7.1f}  {:5.1f}".format(last_m, walk_ms, share)
     else:
         name = "rule 1c off (main)"
     rows, isolated, far, same_touched, swallowed, spells, n_spells = [], 0, 0, 0, 0, [], []
