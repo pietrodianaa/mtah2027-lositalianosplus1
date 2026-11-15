@@ -134,8 +134,8 @@ only):
     statistics); `--tune` and the scripts ran on the external practice games only; the Edge skill
     search (no skill used). No other AI tools.
 
-  Each of us confirmed that none of these tools received the provided data, the video or the
-  ground truth: the repository rules forbid
+  Apart from the Oct 31 case disclosed below, each of us confirmed that none of these tools
+  received the provided data, the video or the ground truth: the repository rules forbid
   agents from reading `data/`, `cache/`, `evaluation/gt/`, results or submissions, and humans run
   anything on the real match. Disclosure: on Oct 31, before the rules clarification, an AI
   assistant briefly read the tracking metadata (BAR-ATH_tactical_atd.xml) and the Smart Tagging
