@@ -15,7 +15,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from possession import dead_ball, external  # noqa: E402
+from possession import dead_ball, external, features  # noqa: E402
 
 if not external.games():
     sys.exit("No external games: run tools/get_external_data.sh first.")
@@ -23,7 +23,12 @@ if not external.games():
 games = []
 for game_id in external.games():
     frames, tags, truth = external.load(game_id)
-    games.append(({"ball": frames["ball"], "half": frames["half"], "pitch": frames["pitch"]}, tags, truth))
+    feats = features.compute(frames)
+    tracked = ~np.isnan(frames["player_speed"])
+    mean_speed = np.where(tracked, frames["player_speed"], 0.0).sum(axis=1) / np.maximum(tracked.sum(axis=1), 1)
+    slim = {"ball": frames["ball"], "half": frames["half"], "pitch": frames["pitch"],
+            "player_speed": mean_speed[:, None]}   # per-frame mean speed: same average for rule 2, far less memory
+    games.append((slim, {"nearest_dist": feats["nearest_dist"]}, tags, truth))
 print("loaded", len(games), "games, labels v{}".format(external.LABELS_VERSION))
 
 
@@ -37,10 +42,10 @@ for hold in (False, True):
     dead_ball.HOLD_UNTIL_RESTART = hold
     t = {"pred": 0, "false": 0, "false_past_line": 0, "false_missing": 0, "false_inside": 0,
          "runs": 0, "isolated_runs": 0, "isolated_frames": 0, "true_stretches": 0, "touched": 0}
-    for frames, tags, truth in games:
+    for frames, feats, tags, truth in games:
         graded = truth != "X"
         true_dead = (truth == "D") & graded
-        pred = dead_ball.detect(frames, {}, tags) & graded
+        pred = dead_ball.detect(frames, feats, tags) & graded
         false = pred & ~true_dead
         x, y = frames["ball"][:, 0], frames["ball"][:, 1]
         length, width = frames["pitch"]
